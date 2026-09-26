@@ -1,0 +1,80 @@
+# Phase 2a BPR (Bureau of Public Roads) analytic congestion fallback.
+# All numeric parameters for congestion/bpr.py live here -- nothing is
+# inlined in code, so tuning the congestion bands never requires a code
+# change.
+
+seed: 42
+
+# Capacity (vehicles/hour/lane) by OSM `highway` tag. Bengaluru-plausible
+# values: arterials (primary/secondary) carry meaningfully more than
+# residential/living_street lanes, which are often narrow, unmarked, and
+# shared with parking/pedestrians.
+capacity_veh_h_per_lane:
+  motorway: 1800
+  motorway_link: 1500
+  trunk: 1600
+  trunk_link: 1300
+  primary: 1200
+  primary_link: 1000
+  secondary: 900
+  secondary_link: 800
+  tertiary: 700
+  tertiary_link: 600
+  unclassified: 500
+  residential: 400
+  living_street: 250
+  service: 300
+default_capacity_veh_h_per_lane: 500
+
+# OSM `lanes` is sparsely tagged in this study area (see Phase 2a report).
+# Default lane count by highway type, used whenever an edge has no usable
+# `lanes` tag.
+default_lanes_by_highway:
+  motorway: 3
+  motorway_link: 1
+  trunk: 2
+  trunk_link: 1
+  primary: 2
+  primary_link: 1
+  secondary: 2
+  secondary_link: 1
+  tertiary: 1
+  tertiary_link: 1
+  unclassified: 1
+  residential: 1
+  living_street: 1
+  service: 1
+default_lanes: 1
+
+# Standard BPR volume-delay function: t = t0 * (1 + alpha * (v/c)^beta)
+bpr:
+  alpha: 0.15
+  beta: 4.0
+
+# Synthetic OD demand + incremental (approximate user-equilibrium)
+# assignment. trips_per_pair_* is the total synthetic trip volume assigned
+# to one OD pair over one time-bin's assignment horizon, in the same units
+# as edge capacity (veh/h-equivalent); it is a free calibration knob, not a
+# measured count -- see Phase 2a report for the values chosen and the
+# resulting congestion ratios.
+demand:
+  # Values below were tuned empirically (see Phase 2a report) against 100
+  # random OD pairs on the real cached graph, evaluated at time_bin=1
+  # (multiplier 1.0): light and heavy are two checkpoints of one shared
+  # incremental ramp (see BPRProvider._run_ramp), landing at ~1.15x and
+  # ~2.19x free-flow mean path cost respectively -- both inside the target
+  # bands (1.1-1.3x / 1.8-2.5x).
+  n_od_pairs: 400
+  trips_per_pair_light: 68
+  trips_per_pair_heavy: 190
+  n_increments: 10
+  time_bins: 4
+  # Multiplies trips_per_pair_* per time bin, so congestion is time-varying
+  # rather than static across a day (e.g. off-peak / AM peak / midday /
+  # PM peak).
+  time_bin_multipliers: [0.5, 1.0, 0.7, 1.15]
+
+# Where computed snapshots are cached, keyed by area-config hash +
+# congestion-config hash + level + time_bin + seed, so Phases 4-8 don't
+# re-run a 10-increment assignment on every process start.
+cache_dir: data/results/congestion_cache

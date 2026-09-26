@@ -29,8 +29,8 @@ that file has the detail.
 
 - [x] Phase 0 — Environment, scaffold, and CLAUDE.md
 - [x] Phase 1 — Road network acquisition (cached graph, 2,000-8,000 nodes)
-- [ ] Phase 2 — Congestion layer: BPR fallback first, then SUMO pipeline + ID join (>=85% edge match coverage)
-- [ ] Phase 3 — Classical baseline: `Router` ABC, Dijkstra, A* (cost equality vs. Dijkstra on 100 OD pairs)
+- [x] Phase 2a — Congestion interface + BPR fallback (`CongestionProvider`, `TrafficSnapshot`, `FreeFlowProvider`, `BPRProvider`); Phase 2b/2c (SUMO pipeline + ID join, >=85% edge match coverage) still open
+- [x] Phase 3 — Classical baseline: `Router` ABC, Dijkstra, A* (cost equality vs. Dijkstra on 100 OD pairs)
 - [ ] Phase 4 — Ant Colony Optimization: MAX-MIN Ant System (stretch <= 1.10 on >=90% of 30 OD pairs)
 - [ ] Phase 5 — Physarum tube-reinforcement model (stretch = 1.0 on >=80% of OD pairs, uncongested)
 - [ ] Phase 6 — Metrics and measurement harness (Parquet schema, no nulls in required columns)
