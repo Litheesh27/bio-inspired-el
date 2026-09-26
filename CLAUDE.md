@@ -11,8 +11,8 @@ routing quality AND recovery after simulated road closures.
 realistic traffic, how much recovery speed do bio-inspired routing methods
 buy, and what is the path-quality cost?
 
-The full plan (all phase specs, exit criteria, execution model) lives at
-`C:\Users\lithe\.claude\plans\pasted-content-id-037c-final-project-starry-sparrow.md`.
+The full plan (all phase specs, exit criteria, execution model) is
+version-controlled at `docs/PLAN.md`.
 Read it alongside this file — this file is the dense summary + invariants;
 that file has the detail.
 
@@ -29,7 +29,11 @@ that file has the detail.
 
 - [x] Phase 0 — Environment, scaffold, and CLAUDE.md
 - [x] Phase 1 — Road network acquisition (cached graph, 2,000-8,000 nodes)
-- [x] Phase 2a — Congestion interface + BPR fallback (`CongestionProvider`, `TrafficSnapshot`, `FreeFlowProvider`, `BPRProvider`); Phase 2b/2c (SUMO pipeline + ID join, >=85% edge match coverage) still open
+- [x] Phase 2a — Congestion interface + BPR fallback (`CongestionProvider`,
+      `TrafficSnapshot`, `FreeFlowProvider`, `BPRProvider`)
+- [ ] Phase 2b/2c — SUMO pipeline + SUMO<->OSMnx edge-ID join (>=85% coverage).
+      BLOCKED: SUMO is not installed on this machine. Everything else can
+      proceed on the BPR fallback in the meantime.
 - [x] Phase 3 — Classical baseline: `Router` ABC, Dijkstra, A* (cost equality vs. Dijkstra on 100 OD pairs)
 - [ ] Phase 4 — Ant Colony Optimization: MAX-MIN Ant System (stretch <= 1.10 on >=90% of 30 OD pairs)
 - [ ] Phase 5 — Physarum tube-reinforcement model (stretch = 1.0 on >=80% of OD pairs, uncongested)
