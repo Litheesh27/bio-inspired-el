@@ -15,9 +15,7 @@ cache/
 !data/raw/.gitkeep
 !data/sumo/.gitkeep
 !data/results/.gitkeep
-# Phase 8 sweep output IS tracked — it is the experimental evidence (see CLAUDE.md invariants).
+# Phase 8 sweep output IS tracked - it is the experimental evidence (see CLAUDE.md invariants).
 # Partial/resume artifacts stay ignored.
 !data/results/final_*.parquet
 
-# osmnx HTTP response cache (regenerable)
-cache/
