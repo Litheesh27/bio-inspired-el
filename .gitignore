@@ -1,0 +1,15 @@
+.venv/
+data/raw/*
+data/sumo/*
+data/results/*
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+src/*.egg-info/
+.claude/settings.local.json
+
+!.gitkeep
+!data/raw/.gitkeep
+!data/sumo/.gitkeep
+!data/results/.gitkeep
