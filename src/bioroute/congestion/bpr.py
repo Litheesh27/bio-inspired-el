@@ -21,6 +21,15 @@ SUMO edge-match coverage is insufficient or SUMO is unavailable.
      and travel times are recomputed via the BPR formula after every
      increment. This approximates user equilibrium without a full
      Frank-Wolfe solver.
+
+     Each congestion level ("light", "heavy") runs its OWN independent
+     assignment from zero demand -- not two checkpoints of one shared ramp.
+     Under user equilibrium, raising total demand can genuinely reduce flow
+     on some individual edges because drivers reroute; forcing elementwise
+     heavy >= light would have meant faking that away. The two levels do
+     share the same sampled OD pairs per time_bin (so they differ only in
+     demand volume, not in which trips exist), but each is routed on its own
+     congested-cost trajectory.
   4. A demand multiplier per time bin, so congestion is time-varying.
 
 Snapshots are deterministic given a seed and are cached to disk (keyed by
@@ -47,6 +56,14 @@ from bioroute.congestion.snapshot import EdgeKey, TrafficSnapshot
 def _load_yaml(path: str | Path) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+# Bumped whenever the assignment algorithm changes shape (independent of
+# any YAML config edit) so stale on-disk snapshots are never silently
+# reused across an algorithm change. v2: independent per-level assignment
+# (each level runs its own ramp from zero demand), replacing v1's shared
+# ramp where "light" was a checkpoint of the "heavy" run.
+_ASSIGNMENT_VERSION = "v2-independent-per-level"
 
 
 def _canonical_hash(d: dict[str, Any]) -> str:
@@ -115,7 +132,13 @@ class BPRProvider(CongestionProvider):
         self._raw_cfg = _load_yaml(congestion_cfg_path)
         self._seed = int(self._raw_cfg["seed"])
         self._area_hash = config_hash(area_cfg)
-        self._cong_hash = _canonical_hash(self._raw_cfg)
+        # `_ASSIGNMENT_VERSION` is folded into the cache key so that changing
+        # the assignment algorithm itself (e.g. shared-ramp -> independent
+        # per-level assignment) invalidates on-disk snapshots even if the
+        # YAML config content were ever unchanged.
+        self._cong_hash = _canonical_hash(
+            {**self._raw_cfg, "_assignment_version": _ASSIGNMENT_VERSION}
+        )
         self._cache_dir = Path(cache_dir) if cache_dir is not None else Path(
             self._raw_cfg.get("cache_dir", "data/results/congestion_cache")
         )
@@ -148,33 +171,27 @@ class BPRProvider(CongestionProvider):
         if cached is not None:
             return cached
 
-        # Light and heavy are two checkpoints of ONE shared incremental
-        # ramp (see _run_ramp), not two independently-optimized equilibria.
-        # This is what guarantees heavy >= light >= freeflow elementwise on
-        # every edge: cumulative assigned volume only ever grows across the
-        # ramp, and the BPR volume-delay function is monotonically
-        # increasing in volume, so travel time at the heavy checkpoint
-        # cannot be lower than at the earlier light checkpoint on any edge.
-        # Computing both here means one ramp run serves both cache misses.
-        results = self._run_ramp(time_bin)
-        snaps: dict[str, TrafficSnapshot] = {}
-        for lvl, travel_time in results.items():
-            snaps[lvl] = TrafficSnapshot(
-                level=lvl,
-                time_bin=time_bin,
-                source="bpr",
-                travel_time=travel_time,
-                meta={
-                    "area_config_hash": self._area_hash,
-                    "congestion_config_hash": self._cong_hash,
-                    "seed": self._seed,
-                    "n_od_pairs": len(self._od_pairs),
-                    "n_lanes_tagged": self._n_tagged,
-                    "n_lanes_default": self._n_default,
-                },
-            )
-            self._save_cache(self._cache_path(lvl, time_bin), snaps[lvl])
-        return snaps[level]
+        # Each level runs its own independent incremental assignment from
+        # zero demand (see _assign). Light and heavy therefore differ only
+        # in total demand volume and are NOT guaranteed elementwise-ordered
+        # on every edge -- see the module docstring.
+        travel_time = self._assign(level, time_bin)
+        snap = TrafficSnapshot(
+            level=level,
+            time_bin=time_bin,
+            source="bpr",
+            travel_time=travel_time,
+            meta={
+                "area_config_hash": self._area_hash,
+                "congestion_config_hash": self._cong_hash,
+                "seed": self._seed,
+                "n_od_pairs": len(self._od_pairs),
+                "n_lanes_tagged": self._n_tagged,
+                "n_lanes_default": self._n_default,
+            },
+        )
+        self._save_cache(cache_path, snap)
+        return snap
 
     # -- Reporting helpers -------------------------------------------------
 
@@ -216,35 +233,28 @@ class BPRProvider(CongestionProvider):
 
     # -- Incremental (approximate user-equilibrium) assignment -------------
 
-    def _run_ramp(self, time_bin: int) -> dict[str, dict[EdgeKey, float]]:
-        """Run ONE incremental all-or-nothing assignment ramp from zero
-        demand up to the heavy level's total demand, and checkpoint the
-        travel-time state at the increment where cumulative demand first
-        reaches the light level's total demand. Both checkpoints share the
-        same monotonically-growing volume trajectory, which is what
-        guarantees heavy >= light >= freeflow elementwise on every edge
-        (see the invariant comment in `snapshot`)."""
+    def _assign(self, level: str, time_bin: int) -> dict[EdgeKey, float]:
+        """Run ONE independent incremental all-or-nothing assignment from
+        zero demand up to ``level``'s total demand for this time_bin. Each
+        level gets its own volume trajectory and its own BPR-recomputed
+        costs at every increment -- it is a full, independently-converged
+        approximate equilibrium, not a checkpoint borrowed from a bigger
+        run. The only thing shared across levels is the OD sample
+        (``self._od_pairs``), so the two levels differ only in demand
+        volume, not in which trips exist."""
         G = self._G
         alpha = float(self._raw_cfg["bpr"]["alpha"])
         beta = float(self._raw_cfg["bpr"]["beta"])
         demand_cfg = self._raw_cfg["demand"]
         n_increments = int(demand_cfg["n_increments"])
         multiplier = float(demand_cfg["time_bin_multipliers"][time_bin])
-        total_light = float(demand_cfg["trips_per_pair_light"]) * multiplier
-        total_heavy = float(demand_cfg["trips_per_pair_heavy"]) * multiplier
-        if total_light > total_heavy:
-            raise ValueError(
-                "trips_per_pair_light must be <= trips_per_pair_heavy for the "
-                "shared-ramp monotonicity guarantee to hold"
-            )
-        increment_per_pair = total_heavy / n_increments
-        light_checkpoint = max(1, round(n_increments * (total_light / total_heavy)))
+        total = float(demand_cfg[f"trips_per_pair_{level}"]) * multiplier
+        increment_per_pair = total / n_increments
 
         volume: dict[EdgeKey, float] = {e: 0.0 for e in self._t0}
         current_tt: dict[EdgeKey, float] = dict(self._t0)
-        light_tt: dict[EdgeKey, float] | None = None
 
-        for i in range(1, n_increments + 1):
+        for _ in range(n_increments):
             weight_fn = _min_weight_fn(current_tt)
             for (s, t) in self._od_pairs:
                 try:
@@ -269,13 +279,7 @@ class BPRProvider(CongestionProvider):
                 c = self._capacity[e]
                 current_tt[e] = t0_val * (1.0 + alpha * (v / c) ** beta)
 
-            if i == light_checkpoint:
-                light_tt = dict(current_tt)
-
-        if light_tt is None:  # defensive; light_checkpoint <= n_increments always
-            light_tt = dict(current_tt)
-
-        return {"light": light_tt, "heavy": current_tt}
+        return current_tt
 
     # -- Disk cache ---------------------------------------------------------
 

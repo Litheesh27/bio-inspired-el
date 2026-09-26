@@ -60,10 +60,14 @@ bpr:
 demand:
   # Values below were tuned empirically (see Phase 2a report) against 100
   # random OD pairs on the real cached graph, evaluated at time_bin=1
-  # (multiplier 1.0): light and heavy are two checkpoints of one shared
-  # incremental ramp (see BPRProvider._run_ramp), landing at ~1.15x and
-  # ~2.19x free-flow mean path cost respectively -- both inside the target
-  # bands (1.1-1.3x / 1.8-2.5x).
+  # (multiplier 1.0). Light and heavy are TWO INDEPENDENT incremental
+  # assignments (see BPRProvider._assign), each run from zero demand to its
+  # own total -- not checkpoints of one shared ramp. With these values they
+  # land at ~1.12x and ~2.19x free-flow mean path cost respectively, both
+  # inside the target bands (1.1-1.3x / 1.8-2.5x). Because the two levels
+  # are independently assigned, a small fraction of edges see heavy < light
+  # (measured ~0.30% of edges) -- this reflects genuine route-switching
+  # under user equilibrium, not a bug; see test_congestion.py.
   n_od_pairs: 400
   trips_per_pair_light: 68
   trips_per_pair_heavy: 190

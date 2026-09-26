@@ -154,16 +154,81 @@ def test_bpr_reproducible_same_seed(real_graph, area_cfg, bpr_cache_dir):
         assert s1.travel_time[k] == pytest.approx(s2.travel_time[k])
 
 
-def test_bpr_heavy_gte_light_gte_freeflow_every_edge(real_graph, area_cfg, bpr_cache_dir):
+def test_bpr_light_gte_freeflow_every_edge(real_graph, area_cfg, bpr_cache_dir):
+    """light >= freeflow elementwise IS guaranteed, unlike heavy vs. light:
+    BPR travel time is t0 * (1 + alpha * (v/c)^beta) with v >= 0, alpha,
+    beta > 0, so it is always >= t0 (free-flow) on every edge regardless of
+    how the assignment converges. Any edge violating this would be a real
+    bug in the BPR formula or capacity table, not route-switching."""
+    bpr = BPRProvider(real_graph, area_cfg, CONGESTION_CONFIG_PATH, cache_dir=bpr_cache_dir)
+    ff = FreeFlowProvider(real_graph).snapshot()
+    light = bpr.snapshot("light", time_bin=1)
+
+    assert light.travel_time.keys() == ff.travel_time.keys()
+    for e in ff.travel_time:
+        assert light.travel_time[e] >= ff.travel_time[e] - 1e-9
+
+
+def test_bpr_aggregate_monotonic_freeflow_light_heavy(real_graph, area_cfg, bpr_cache_dir):
+    """Light and heavy are independent per-level equilibria (see
+    BPRProvider._assign), so elementwise heavy >= light does not hold on
+    every edge -- that would require faking route-switching away (see
+    module docstring). What DOES hold, and is asserted here, is aggregate
+    monotonicity: mean edge travel time, and mean cost over a fixed sample
+    of OD shortest paths, both strictly increase freeflow -> light ->
+    heavy, because more total demand strictly increases total network-wide
+    delay under BPR even when a few individual edges get relief from
+    rerouting."""
+    import random
+
     bpr = BPRProvider(real_graph, area_cfg, CONGESTION_CONFIG_PATH, cache_dir=bpr_cache_dir)
     ff = FreeFlowProvider(real_graph).snapshot()
     light = bpr.snapshot("light", time_bin=1)
     heavy = bpr.snapshot("heavy", time_bin=1)
 
-    assert light.travel_time.keys() == ff.travel_time.keys() == heavy.travel_time.keys()
-    for e in ff.travel_time:
-        assert heavy.travel_time[e] >= light.travel_time[e] - 1e-9
-        assert light.travel_time[e] >= ff.travel_time[e] - 1e-9
+    def mean_edge_tt(snap: TrafficSnapshot) -> float:
+        return sum(snap.travel_time.values()) / len(snap.travel_time)
+
+    assert mean_edge_tt(ff) < mean_edge_tt(light) < mean_edge_tt(heavy)
+
+    rng = random.Random(7)
+    nodes = sorted(real_graph.nodes())
+    pairs = [tuple(rng.sample(nodes, 2)) for _ in range(100)]
+
+    def mean_od_cost(snap: TrafficSnapshot) -> float:
+        w = snap.nx_weight()
+        costs = []
+        for s, t in pairs:
+            try:
+                path = nx.shortest_path(real_graph, s, t, weight=w)
+            except nx.NetworkXNoPath:
+                continue
+            costs.append(snap.cost_of_path(real_graph, path))
+        return sum(costs) / len(costs)
+
+    assert mean_od_cost(ff) < mean_od_cost(light) < mean_od_cost(heavy)
+
+
+def test_bpr_heavy_lt_light_fraction_bounded(real_graph, area_cfg, bpr_cache_dir):
+    """Independent per-level assignment means some edges genuinely see
+    heavy < light (drivers reroute away from them once heavy demand makes
+    other routes relatively better). That is real traffic behaviour, not a
+    bug -- but it should stay a small minority of edges, not swamp the
+    network. Measured fraction on the real cached graph (light=68,
+    heavy=190 trips/pair, time_bin=1): ~0.30% of edges. Bound set at 1%,
+    a defensible round number comfortably above the measured value, so this
+    test catches a real regression (e.g. a demand/capacity misconfiguration
+    causing widespread reversal) without being a tautology."""
+    bpr = BPRProvider(real_graph, area_cfg, CONGESTION_CONFIG_PATH, cache_dir=bpr_cache_dir)
+    light = bpr.snapshot("light", time_bin=1)
+    heavy = bpr.snapshot("heavy", time_bin=1)
+
+    n_edges = len(light.travel_time)
+    n_reversed = sum(
+        1 for e in light.travel_time if heavy.travel_time[e] < light.travel_time[e] - 1e-9
+    )
+    frac = n_reversed / n_edges
+    assert frac < 0.01, f"fraction of edges with heavy < light = {frac:.4f}, expected < 1%"
 
 
 def test_bpr_congestion_ratio_bands(real_graph, area_cfg, bpr_cache_dir):
