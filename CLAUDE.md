@@ -59,7 +59,7 @@ bio_el/
 ├── scripts/00_setup_check.py ... 05_export_web.py
 ├── web/                        # results dashboard (published as an Artifact)
 ├── figures/                    # publication-quality PNG/SVG output
-├── data/{raw,network,sumo,results}/   # raw+sumo+results gitignored, network cached
+├── data/{raw,network,sumo,results}/   # raw+sumo ignored; network cached; final results parquet tracked
 └── tests/
 ```
 
@@ -81,6 +81,11 @@ it; it tells you the intended contract.
   `TrafficSnapshot` from a `CongestionProvider`. This is what keeps the
   SUMO/BPR swap free.
 - Failures are recorded (`failed=True`), never silently dropped from results.
+- The Phase 8 sweep output is committed to git as
+  `data/results/final_<confighash>.parquet`. It is the experimental evidence
+  every figure derives from, and re-running the sweep to recover it costs
+  hours. Partial/resume artifacts stay gitignored — only the final file is
+  tracked (see `.gitignore`).
 - Python 3.10 venv at `.venv`. Always use `.venv/Scripts/python.exe` (not
   the system `python`/`py`).
 
