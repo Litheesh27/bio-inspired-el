@@ -1,0 +1,38 @@
+# Study area: Central Bengaluru (MG Road / Cubbon Park / Shivajinagar /
+# Richmond Town), roughly 4x4 km. Phase 1 network acquisition config.
+name: central_blr
+bbox:
+  north: 12.9930
+  south: 12.9570
+  east:  77.6185
+  west:  77.5815
+network_type: drive
+simplify: true
+
+# Overpass endpoint used for the single logical snapshot fetch (raw XML +
+# OSMnx graph both come from this same query).
+overpass_url: "https://overpass-api.de/api/interpreter"
+overpass_timeout: 300
+
+# Free-flow speed defaults (km/h) by OSM `highway` tag, used as the
+# `hwy_speeds` fallback table for ox.add_edge_speeds. OSM `maxspeed` tags are
+# sparse in Indian cities, so most edges fall back to these defaults.
+# Values reflect typical Bengaluru arterial/local-street conditions rather
+# than posted (often unrealistic) speed limits.
+speeds_kph:
+  motorway: 60
+  motorway_link: 40
+  trunk: 50
+  trunk_link: 35
+  primary: 40
+  primary_link: 30
+  secondary: 35
+  secondary_link: 25
+  tertiary: 30
+  tertiary_link: 25
+  unclassified: 25
+  residential: 20
+  living_street: 15
+  service: 15
+# Fallback speed (km/h) for any highway type not listed above.
+default_speed_kph: 20

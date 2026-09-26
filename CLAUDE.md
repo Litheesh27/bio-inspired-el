@@ -28,7 +28,7 @@ that file has the detail.
 ## Phases
 
 - [x] Phase 0 — Environment, scaffold, and CLAUDE.md
-- [ ] Phase 1 — Road network acquisition (cached graph, 2,000-8,000 nodes)
+- [x] Phase 1 — Road network acquisition (cached graph, 2,000-8,000 nodes)
 - [ ] Phase 2 — Congestion layer: BPR fallback first, then SUMO pipeline + ID join (>=85% edge match coverage)
 - [ ] Phase 3 — Classical baseline: `Router` ABC, Dijkstra, A* (cost equality vs. Dijkstra on 100 OD pairs)
 - [ ] Phase 4 — Ant Colony Optimization: MAX-MIN Ant System (stretch <= 1.10 on >=90% of 30 OD pairs)

@@ -8,6 +8,8 @@ __pycache__/
 *.egg-info/
 src/*.egg-info/
 .claude/settings.local.json
+# osmnx's default Overpass HTTP response cache (settings.cache_folder).
+cache/
 
 !.gitkeep
 !data/raw/.gitkeep
