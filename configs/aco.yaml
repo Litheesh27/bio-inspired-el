@@ -1,0 +1,97 @@
+# Phase 4 MAX-MIN Ant System (MMAS) hyperparameters.
+# All numeric parameters for algorithms/aco.py live here -- nothing is
+# inlined in code, so tuning never requires a code change.
+#
+# See docs/tuning/aco_sweep.md for the full sweep record and the
+# justification for these final values.
+
+# Transition rule p ~ tau^alpha * eta^beta.
+alpha: 1.0
+
+# use_goal_heuristic=True (default): eta(u,v,k) = 1/(travel_time + h(v)),
+# h(v) = admissible great-circle/global-max-speed distance-to-target
+# (same heuristic AStarRouter uses). use_goal_heuristic=False: classical
+# MMAS as specified, eta = 1/travel_time only, no knowledge of where the
+# target is. This is a config switch (not hardcoded) because giving ACO
+# the same target-location information A*'s heuristic encodes makes the
+# ACO-vs-A* comparison not apples-to-apples, and Physarum has no
+# equivalent mechanism -- see docs/tuning/aco_sweep.md's goal-heuristic
+# ablation for the measured completion-rate and stretch difference.
+use_goal_heuristic: false
+
+# `beta`: used whenever use_goal_heuristic=True (the ablation mode) --
+# 4.0 is what worked well in goal-heuristic testing. `beta_no_heuristic`:
+# used instead whenever use_goal_heuristic=False (the current default,
+# headline mode) -- 1.0 is what the sweep found best for the no-heuristic
+# mode (a high beta over-commits to locally-fast-but-directionless edges
+# without a target-location signal to correct it). See
+# ACORouter.prepare(): beta_no_heuristic overrides beta only when
+# use_goal_heuristic is False AND beta_no_heuristic is not null.
+beta: 4.0
+beta_no_heuristic: 1.0
+
+# Evaporation rate applied to every edge's pheromone each iteration.
+rho: 0.1
+
+# Number of ants constructing a solution per iteration.
+n_ants: 40
+
+# Deposit amount on the iteration-best path: delta_tau = Q / L_best.
+Q: 1.0
+
+# Initial pheromone value used before any valid path has been found (also
+# the cold-start / warm=False reinitialization value, i.e. tau_max at
+# start). Once a valid path is found, tau_max is recomputed dynamically
+# each iteration as 1 / (rho * L_best_global) (standard MMAS), and
+# tau_min = tau_max / tau_min_ratio.
+tau_max_init: 1.0
+tau_min_ratio: 20.0
+
+# Per-ant FORWARD step budget: max_steps = max_steps_multiplier * estimated
+# graph diameter (in hops, estimated once per `prepare` via a double-sweep
+# BFS from the source node).
+max_steps_multiplier: 3
+
+# Construction uses depth-first backtracking (see aco.py _construct_ant):
+# on a dead end, pop back to the last node with an untried branch instead
+# of discarding the ant outright. Bounds total construction work (forward
+# steps + backtracks) at max_steps * backtrack_multiplier; an ant that
+# exhausts this budget, or backtracks all the way to the source with
+# nothing left to try, is discarded -- not repaired.
+backtrack_multiplier: 25
+
+# Convergence: iteration-best path unchanged for k_stall consecutive
+# iterations (iterations with no valid ant reset the stall counter to 0,
+# since "unchanged" cannot be confirmed) AND pheromone branching factor
+# at or below branching_factor_threshold.
+k_stall: 60
+
+# Branching factor: for each node, count out-edges whose pheromone exceeds
+# tau_min + lambda_branching * (tau_max - tau_min); average this count
+# over nodes with at least one out-edge.
+lambda_branching: 0.05
+branching_factor_threshold: 1.02
+
+# Disruption response strategy for apply_disruption(warm=True):
+#   "zero"        -- (a) only zero/invalidate the severed edges themselves.
+#   "local_reset" -- (b) additionally reset pheromone to tau_max on all
+#                    edges within disruption_n_hop hops (undirected sense,
+#                    i.e. treating the graph as undirected for the hop
+#                    count) of either endpoint of a severed edge.
+# Both are implemented; this is only the default used when a router is
+# constructed without an explicit override.
+disruption_strategy: "zero"
+disruption_n_hop: 2
+
+# Suggested iteration budget for run_to_convergence() -- not read by
+# ACORouter itself (the caller owns the budget), recorded here so scripts
+# and the exit-criterion measurement agree on one number. 600 is the
+# no-heuristic (headline) mode's budget: the sweep found this mode needs
+# a materially larger budget than the goal-heuristic mode (~90 iters) to
+# have a chance at stretch<=1.10 on longer OD pairs -- this is the honest
+# cost of not having target-location information, not a tuning artifact.
+suggested_budget: 600
+# Budget used for the goal-heuristic ablation measurement (much smaller;
+# recorded here for the reproducibility record, read by the ablation
+# script/test rather than by ACORouter itself).
+suggested_budget_goal_heuristic: 250

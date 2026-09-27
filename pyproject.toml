@@ -11,3 +11,9 @@ readme = "README.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: long-running measurements (exit-criterion sweeps over many OD pairs). Deselect with -m 'not slow'.",
+]

@@ -36,8 +36,28 @@ that file has the detail.
       coverage (no geometric fallback needed). See `SUMOProvider` in
       `congestion/sumo.py` and the join logic in `network/ids.py`.
 - [x] Phase 3 — Classical baseline: `Router` ABC, Dijkstra, A* (cost equality vs. Dijkstra on 100 OD pairs)
-- [ ] Phase 4 — Ant Colony Optimization: MAX-MIN Ant System (stretch <= 1.10 on >=90% of 30 OD pairs)
-- [ ] Phase 5 — Physarum tube-reinforcement model (stretch = 1.0 on >=80% of OD pairs, uncongested)
+- [~] Phase 4 — ACO (MMAS) implemented and tested, exit criterion NOT yet
+      measured. Headline mode is PURELY LOCAL (`use_goal_heuristic: false`,
+      eta = 1/travel_time); the goal-directed variant (eta = 1/(tt + h(v)),
+      A*'s heuristic) is a reported ablation, not the default — giving ACO
+      target-location information Physarum never gets would make the
+      three-way comparison unfair. Plain MMAS had a 0% ant completion rate
+      on this graph (mean out-degree ~2.5, cul-de-sacs), fixed by
+      backtracking construction. Local mode plateaus near stretch 1.157 on
+      some OD pairs regardless of tuning — a real negative result to report.
+      See `docs/tuning/aco_sweep.md`.
+- [ ] Phase 4b — Vectorize ACO. BLOCKING Phase 8: measured 0.84 s/iteration
+      (dict-keyed pheromone, pure-Python ant loops) => 504 s per solve at
+      budget 600 => 588 h serial for Phase 8's 4,200 ACO runs. Rewrite with
+      numpy arrays + CSR adjacency (target 10-20x); combined with joblib on
+      14 cores this brings the sweep to ~5 h. Algorithm and tuned
+      hyperparameters must not change.
+- [x] Phase 5 — Physarum tube-reinforcement model. Exit criterion PASSED:
+      26/30 (87%) exact stretch-1.0 matches under freeflow. Laplacian built
+      on an undirected projection (grounded at the sink); extracted paths are
+      always directed-valid in the original MultiDiGraph. Convergence uses
+      max|dD| < eps ONLY — path-stability fired early on wrong paths because
+      D decays in near-lockstep across edges early on. ~3-8 ms per solve.
 - [ ] Phase 6 — Metrics and measurement harness (Parquet schema, no nulls in required columns)
 - [ ] Phase 7 — Disruption scenarios S0-S6 (reproducible under fixed seed, connectivity preserved)
 - [ ] Phase 8 — Experiment matrix and runner (full sweep, failed rate < 5%, resumable)

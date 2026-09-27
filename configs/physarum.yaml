@@ -1,0 +1,35 @@
+# Phase 5: Tero et al. adaptive-conductivity (Physarum) router parameters.
+# Loaded by src/bioroute/algorithms/physarum.py::load_physarum_config.
+# Owned by the Physarum module only -- do not fold ACO parameters in here
+# (those live in the ACO agent's own config file).
+
+seed: 0
+
+# "tero": D <- D + dt * (f(|Q|) - D), f(Q) = |Q|^mu / (1 + |Q|^mu)
+# "bonifaci": D <- |Q|  (simpler, proven shortest-path convergence result;
+#             used as a cross-check on the Tero implementation)
+variant: tero
+
+I0: 1.0              # injected current at source, drained at sink (amps, arbitrary unit)
+D_init: 1.0           # initial conductivity, uniform over every undirected edge
+dt: 0.15              # adaptation step size (Tero variant only)
+mu: 1.8               # Tero sigmoid exponent
+
+eps: 1.0e-4           # convergence fires ONLY when max|delta D| across all
+                      # edges < eps (see module docstring's CONVERGENCE
+                      # section: a path-stability early-exit was tried and
+                      # rejected -- it locks onto a WRONG path during the
+                      # early relaxation phase on a large fraction of real
+                      # OD pairs, because D decays toward its fixed point in
+                      # near-lockstep across edges before flux has actually
+                      # differentiated the true shortest path).
+stability_k: 5        # window size for the (diagnostics-only) path-history
+                      # tracked in extras; does NOT affect convergence.
+stability_max_delta: 0.01   # unused by convergence (kept for any future
+                      # experiment that wants to re-enable a gated
+                      # path-stability early-exit; see CONVERGENCE docs).
+
+theta: 0.05           # D threshold for the path-extraction fallback subgraph
+walk_max_steps_factor: 4   # greedy max-flux walk step budget = factor * n_nodes
+
+default_iteration_budget: 300   # used by scripts/tests when no budget is given
