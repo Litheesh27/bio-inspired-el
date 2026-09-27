@@ -31,9 +31,10 @@ that file has the detail.
 - [x] Phase 1 — Road network acquisition (cached graph, 2,000-8,000 nodes)
 - [x] Phase 2a — Congestion interface + BPR fallback (`CongestionProvider`,
       `TrafficSnapshot`, `FreeFlowProvider`, `BPRProvider`)
-- [ ] Phase 2b/2c — SUMO pipeline + SUMO<->OSMnx edge-ID join (>=85% coverage).
-      BLOCKED: SUMO is not installed on this machine. Everything else can
-      proceed on the BPR fallback in the meantime.
+- [x] Phase 2b/2c — SUMO pipeline + SUMO<->OSMnx edge-ID join (>=85% coverage).
+      SUMO 1.27.1 is installed at C:\Sumo. Achieved 97.53% ID-based edge-match
+      coverage (no geometric fallback needed). See `SUMOProvider` in
+      `congestion/sumo.py` and the join logic in `network/ids.py`.
 - [x] Phase 3 — Classical baseline: `Router` ABC, Dijkstra, A* (cost equality vs. Dijkstra on 100 OD pairs)
 - [ ] Phase 4 — Ant Colony Optimization: MAX-MIN Ant System (stretch <= 1.10 on >=90% of 30 OD pairs)
 - [ ] Phase 5 — Physarum tube-reinforcement model (stretch = 1.0 on >=80% of OD pairs, uncongested)

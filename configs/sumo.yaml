@@ -1,0 +1,47 @@
+# Phase 2b/2c SUMO pipeline configuration. Mirrors configs/congestion.yaml's
+# role for BPR: every numeric knob for the SUMO demand/simulation pipeline
+# lives here so re-running scripts/02_run_sumo.py with different values is a
+# config edit, not a code change, and so SUMOProvider's on-disk snapshot
+# cache is correctly invalidated whenever one of these changes (folded into
+# the cache key alongside the area config hash).
+
+seed_light: 42
+seed_heavy: 43
+
+# randomTrips.py --period (mean seconds between departures) for each
+# demand level. Smaller period = more vehicles = heavier demand. Tuned
+# empirically (see Phase 2b/2c report) so heavy demand visibly jams part of
+# the network (queueing/teleports) while light stays free-flowing.
+period_light: 3
+period_heavy: 0.6
+
+# Simulation departs vehicles from t=0 to t=demand_end, then keeps running
+# until t=sim_end so in-progress trips can actually finish (or, under heavy
+# demand, so the tail of the demand curve has time to load the network
+# rather than the run stopping mid-ramp-up).
+demand_end: 3600
+sim_end: 5000
+
+# <edgeData> aggregation interval, seconds.
+edgedata_freq: 300
+
+# netconvert flags (--geometry.remove deliberately excluded -- see
+# congestion/sumo.py module docstring).
+netconvert_flags:
+  - "--roundabouts.guess"
+  - "--ramps.guess"
+  - "--junctions.join"
+  - "--tls.guess-signals"
+
+# Plausibility clipping for SUMO-reported edge traveltime (see
+# congestion/sumo.py's `_clip_implausible_traveltime`): SUMO reports very
+# large per-interval traveltime for an edge where a vehicle sat through a
+# jam/teleport wait. Any interval sample above
+# `implausible_cap_factor * (length / speed_limit)` for its edge is clipped
+# to that cap before being folded into the length-weighted mean, rather
+# than either passed through raw (which would let one stalled vehicle
+# dominate an edge's whole-simulation average) or discarded outright
+# (which would erase genuine congestion signal on that edge).
+implausible_cap_factor: 20.0
+
+cache_dir: data/results/congestion_cache
