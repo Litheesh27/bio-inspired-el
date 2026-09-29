@@ -273,6 +273,100 @@ def test_aco_goal_heuristic_switch_changes_behavior(real_graph, small_od_pairs):
 
 
 # --------------------------------------------------------------------------
+# Phase 4b: the construction hot loop inlines `_weighted_candidates` and
+# `_pick_and_remove` for speed (see aco.py `_construct_ant`). Those two
+# methods remain as the readable reference form of that inlined code, so
+# they can silently drift apart -- these tests are what stops that.
+# --------------------------------------------------------------------------
+
+
+def _reference_construct_ant(router):
+    """The Phase 4 construction loop, written against the reference helper
+    methods instead of the inlined fast path. Deliberately a transcription
+    of `_construct_ant`'s structure with `router._weighted_candidates(...)`
+    / `router._pick_and_remove(...)` calls in place of the inlined bodies,
+    and with `len(path_idx)` recomputed rather than tracked in `depth`."""
+    target_idx = router._target_idx
+    path_idx = [router._source_idx]
+    edge_path_ids = []
+    visited = bytearray(router._n_nodes)
+    visited[router._source_idx] = 1
+    frames = []
+    op_budget = router._max_steps * router._backtrack_multiplier
+    ops = 0
+
+    candidates = router._weighted_candidates(router._source_idx, visited)
+
+    while True:
+        ops += 1
+        if ops > op_budget:
+            return None
+        if path_idx[-1] == target_idx:
+            break
+        if len(path_idx) - 1 >= router._max_steps:
+            candidates = []
+        if not candidates:
+            if len(path_idx) == 1:
+                return None
+            visited[path_idx.pop()] = 0
+            edge_path_ids.pop()
+            candidates = frames.pop()
+            continue
+        eid, v_idx = router._pick_and_remove(candidates)
+        frames.append(candidates)
+        edge_path_ids.append(eid)
+        path_idx.append(v_idx)
+        visited[v_idx] = 1
+        candidates = router._weighted_candidates(v_idx, visited)
+
+    path = [router._node_ids[i] for i in path_idx]
+    edge_path = [router._edge_keys[e] for e in edge_path_ids]
+    cost = router._snapshot.cost_of_path(router._G, path)
+    return path, cost, edge_path
+
+
+def _compare_inlined_vs_reference(router, n_ants):
+    """Run `n_ants` ants both ways from the same RNG state; every ant must
+    make identical choices (same path, same cost, same edges, same
+    discard decisions)."""
+    rng_state = router._rng.getstate()
+    inlined = [router._construct_ant() for _ in range(n_ants)]
+    router._rng.setstate(rng_state)
+    reference = [_reference_construct_ant(router) for _ in range(n_ants)]
+    assert len(inlined) == len(reference)
+    for a, b in zip(inlined, reference):
+        assert (a is None) == (b is None)
+        if a is not None:
+            assert a[0] == b[0]
+            assert a[1] == b[1]
+            assert a[2] == b[2]
+    return inlined
+
+
+@pytest.mark.parametrize("use_goal_heuristic", [True, False])
+def test_aco_hot_loop_matches_reference_helpers_toy(use_goal_heuristic):
+    G = _toy_graph()
+    snap = _toy_snapshot(G)
+    router = ACORouter(config=_TOY_TEST_CONFIG, use_goal_heuristic=use_goal_heuristic)
+    router.prepare(G, "A", "E", snap, seed=3)
+    router.step()  # get off the uniform-pheromone starting state
+    results = _compare_inlined_vs_reference(router, n_ants=25)
+    assert any(r is not None for r in results)
+
+
+def test_aco_hot_loop_matches_reference_helpers_real(real_graph, small_od_pairs):
+    """Same check on the real network, where backtracking actually fires
+    (most ants here dead-end repeatedly, so this exercises the inlined
+    backtrack/resume path, not just the happy path)."""
+    snap = FreeFlowProvider(real_graph).snapshot()
+    s, t = small_od_pairs[0]
+    router = ACORouter()
+    router.prepare(real_graph, s, t, snap, seed=0)
+    router.step()
+    _compare_inlined_vs_reference(router, n_ants=15)
+
+
+# --------------------------------------------------------------------------
 # Slow: the actual exit-criterion measurement (30 OD pairs x 2 congestion
 # levels). Not run by default `pytest tests/ -v`.
 # --------------------------------------------------------------------------

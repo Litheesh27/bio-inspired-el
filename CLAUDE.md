@@ -46,12 +46,29 @@ that file has the detail.
       backtracking construction. Local mode plateaus near stretch 1.157 on
       some OD pairs regardless of tuning — a real negative result to report.
       See `docs/tuning/aco_sweep.md`.
-- [ ] Phase 4b — Vectorize ACO. BLOCKING Phase 8: measured 0.84 s/iteration
-      (dict-keyed pheromone, pure-Python ant loops) => 504 s per solve at
-      budget 600 => 588 h serial for Phase 8's 4,200 ACO runs. Rewrite with
-      numpy arrays + CSR adjacency (target 10-20x); combined with joblib on
-      14 cores this brings the sweep to ~5 h. Algorithm and tuned
-      hyperparameters must not change.
+- [x] Phase 4b — ACO performance. 0.186 -> 0.078 s/iteration sustained
+      (2.4x), bit-for-bit identical results to Phase 4 (15 runs x 10 fields,
+      zero differences; `random.Random` retained). Phase 8's 4,200 ACO solves:
+      ~55 h serial, ~5.4 h at 10x parallel.
+      Win came from REMOVING numpy from the per-candidate hot path: graph mean
+      out-degree is 2.46, so numpy dispatch on 1-3 element arrays cost far more
+      than the arithmetic. Plus a per-iteration weight cache (tau^alpha*eta^beta
+      is constant within an iteration) and inlining the candidate loop.
+      BENCHMARKING CAVEAT: this machine's throughput swings up to 3.4x with
+      thermal state. Only ever compare variants interleaved within ONE process.
+      An earlier "588 h" figure in this file was extrapolated from a regressed
+      intermediate build measured across separate runs; it was wrong.
+- [ ] Phase 4c — Adopt the per-ant dead-node memo, then re-tune and re-measure.
+      Purely-local ACO currently completes on only ~26% of ants (0-12% on 4 of
+      5 sampled OD pairs, every ant burning its full 5,175-op budget); ants
+      re-enter dead subtrees hard (2,793 forward moves, only 320 distinct
+      nodes, worst node re-entered ~129x). A per-ant memo of proven-dead nodes
+      measured completion 6->55%, 0->45%, 12->86% and stretch 1.796->1.102,
+      5.10->1.44, 1.944->1.442. It CHANGES search behaviour, so adopting it
+      invalidates the existing tuning sweep and the stretch-1.157 plateau
+      finding — both must be re-run. Caveat to document: deadness is
+      context-dependent on the visited set, so the memo is an approximation
+      that can prune genuinely viable paths.
 - [x] Phase 5 — Physarum tube-reinforcement model. Exit criterion PASSED:
       26/30 (87%) exact stretch-1.0 matches under freeflow. Laplacian built
       on an undirected projection (grounded at the sink); extracted paths are

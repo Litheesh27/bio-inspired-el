@@ -1,6 +1,8 @@
 """Ant Colony Optimization router (MAX-MIN Ant System).
 
-IMPLEMENTED IN: Phase 4.
+IMPLEMENTED IN: Phase 4. VECTORIZED IN: Phase 4b (performance only -- see
+"Phase 4b: vectorization" below; the algorithm itself is unchanged from
+Phase 4).
 
 `ACORouter(Router)` implements MAX-MIN Ant System (MMAS): tau_min/tau_max
 bounds on every edge's pheromone, which is what keeps this from stagnating
@@ -83,6 +85,52 @@ Neither alone is sufficient (see docs/PLAN.md Phase 4).
   invalidated (cleared) so `best_path()`/`best_cost()` never returns a path
   through a removed edge; subsequent `step()` calls resume the ant
   construction loop with the retained (adjusted) pheromone matrix.
+
+------------------------------------------------------------------------
+Phase 4b: performance (NOT a behaviour change -- bit-for-bit identical)
+------------------------------------------------------------------------
+The Phase 4 implementation cost ~0.6-0.7 s/iteration on the real graph
+(2,856 nodes / 7,015 edges, n_ants=40), which put the Phase 8 ACO sweep in
+the hundreds of serial hours. The cost was never the MMAS model: it was
+per-candidate bookkeeping. An ant performs ~5,000 construction operations
+(forward steps + backtracks) and the colony performs ~200,000 of them per
+iteration, so everything on that path is multiplied by 200,000 while
+everything outside it is essentially free.
+
+Two things were fixed:
+
+1. DENSE INDEXING, BUILT ONCE. Node ids and (u, v, k) edge keys are mapped
+   to dense integers in `_rebuild_arrays`, with a CSR-style
+   node -> out-edge structure, per-edge eta^beta precomputed, and edges
+   whose head cannot reach the target filtered out up front. The
+   construction loop then does list indexing on ints instead of dict
+   lookups on tuples, and `visited` is a `bytearray` indexed by node
+   index instead of a set of node ids.
+
+2. NUMPY ONLY WHERE THE ARRAY IS BIG. Evaporation, deposit, the tau
+   clip and the branching factor run over all ~7,000 edges at once and
+   are genuinely vectorized (`_pheromone_arr` is the source of truth).
+   The per-candidate path is the opposite case: mean out-degree here is
+   2.46 and 19% of nodes have out-degree 1, so a candidate set is a 1-3
+   element sequence, and an earlier attempt that used numpy there
+   (fancy-indexing + cumsum + searchsorted + an `np.ones` mask per
+   candidate set) was measured 5.3x SLOWER than plain Python scalars --
+   numpy's per-call overhead dwarfs arithmetic at that size. That path is
+   therefore plain Python lists/floats, fed from `_cand_base`, which is
+   re-derived from the numpy array once per iteration (~7,000 conversions against ~110,000 candidate evaluations).
+
+Nothing about the search changed. The RNG is still `random.Random(seed)`,
+drawn once per pick in the same order, from candidate sets built in the
+same order with bit-for-bit identical weights -- so this implementation
+reproduces the Phase 4 implementation EXACTLY: same paths, same costs,
+same iteration counts, same ant completion rates, same operations per ant,
+at every seed tested. (That is stronger than the Phase 4b spec required --
+it permitted an RNG-stream change and therefore only statistical
+equivalence -- and it is what makes the tuning record and the
+stretch-1.157 plateau finding in docs/tuning/aco_sweep.md still apply
+verbatim to this code.) Measured speedups, the operations-per-ant
+accounting, and the honest note about what was NOT achieved are in that
+file's "Phase 4b performance" section.
 """
 
 from __future__ import annotations
@@ -92,6 +140,7 @@ import random
 from typing import Any
 
 import networkx as nx
+import numpy as np
 
 from bioroute.algorithms.base import Router
 from bioroute.congestion.snapshot import TrafficSnapshot
@@ -148,19 +197,19 @@ def load_aco_config(path: str = "configs/aco.yaml") -> dict[str, Any]:
     return cfg
 
 
-def _haversine_m(y1: float, x1: float, y2: float, x2: float) -> float:
-    """Great-circle distance in meters between two (lat, lon) points.
-    Duplicated from algorithms/classical.py (a shared module we must not
-    edit per the Phase 4 coordination constraints) rather than imported,
-    to keep aco.py self-contained within its own touched-files list."""
-    import math
-
+def _haversine_m(y1, x1, y2, x2):
+    """Great-circle distance in meters, vectorized (y1/x1 may be numpy
+    arrays; y2/x2 are the scalar target coordinates). Duplicated from
+    algorithms/classical.py (a shared module we must not edit per the
+    Phase 4 coordination constraints) rather than imported, to keep aco.py
+    self-contained within its own touched-files list."""
     R = 6371000.0
-    phi1, phi2 = math.radians(y1), math.radians(y2)
-    dphi = math.radians(y2 - y1)
-    dlambda = math.radians(x2 - x1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    return 2 * R * math.asin(math.sqrt(a))
+    phi1 = np.radians(y1)
+    phi2 = np.radians(y2)
+    dphi = np.radians(y2 - y1)
+    dlambda = np.radians(x2 - x1)
+    a = np.sin(dphi / 2) ** 2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2) ** 2
+    return 2 * R * np.arcsin(np.sqrt(a))
 
 
 def _estimate_diameter_hops(G: nx.MultiDiGraph, seed_node: int) -> int:
@@ -177,6 +226,12 @@ def _estimate_diameter_hops(G: nx.MultiDiGraph, seed_node: int) -> int:
     d1 = max(lengths1.values()) if lengths1 else 1
     d2 = max(lengths2.values()) if lengths2 else 1
     return max(1, d1, d2)
+
+
+# Empty-candidate sentinel reused everywhere a node has no viable out-edge,
+# so `_weighted_candidates` never has to allocate fresh empty arrays.
+_EMPTY_I = np.empty(0, dtype=np.int64)
+_EMPTY_F = np.empty(0, dtype=np.float64)
 
 
 class ACORouter(Router):
@@ -261,13 +316,19 @@ class ACORouter(Router):
         self._diameter_estimate = diameter
         self._backtrack_multiplier = int(self.config["backtrack_multiplier"])
 
-        self._setup_heuristic()
-        self._build_adjacency()
-        self._update_reachability()
+        self._rebuild_arrays()
 
         self._tau_max = self._tau_max_init
         self._tau_min = self._tau_max_init / self._tau_min_ratio
-        self._pheromone: dict[EdgeKey, float] = {e: self._tau_max for e in self._all_edges}
+        self._pheromone_arr = np.full(self._n_edges, self._tau_max, dtype=np.float64)
+        self._refresh_weight_cache()
+
+        # Construction-work counters (diagnostics only; two integer
+        # increments per ant). `ops` is the same quantity `_construct_ant`
+        # bounds with op_budget: forward steps + backtracks.
+        self._ops_total = 0
+        self._ants_total = 0
+        self._ants_completed = 0
 
         self._best_path: list[int] | None = None
         self._best_cost: float | None = None
@@ -279,110 +340,240 @@ class ACORouter(Router):
         self._empty_iterations = 0
         self._done_steps = 0
 
-    def _setup_heuristic(self) -> None:
-        """Admissible remaining-distance term h(v) added to travel_time
-        inside eta (see module docstring): great-circle distance from v to
-        the target, divided by the graph's global max edge speed. Cached
-        per-node on first use since only visited nodes ever need it."""
-        max_speed_kph = 0.0
-        for _, _, data in self._G.edges(data=True):
-            sp = data.get("speed_kph")
-            if sp is not None and sp > max_speed_kph:
-                max_speed_kph = float(sp)
-        if max_speed_kph <= 0:
-            max_speed_kph = 20.0  # graceful fallback for edge-attribute-less toy graphs
-        self._max_speed_mps = max_speed_kph * 1000.0 / 3600.0
-        self._h_target_y = self._G.nodes[self._target]["y"]
-        self._h_target_x = self._G.nodes[self._target]["x"]
-        self._h_cache: dict[int, float] = {}
+    # -- dense array bookkeeping ------------------------------------------
 
-    def _h(self, v: int) -> float:
-        cached = self._h_cache.get(v)
-        if cached is not None:
-            return cached
-        vy = self._G.nodes[v]["y"]
-        vx = self._G.nodes[v]["x"]
-        dist_m = _haversine_m(vy, vx, self._h_target_y, self._h_target_x)
-        val = dist_m / self._max_speed_mps
-        self._h_cache[v] = val
-        return val
+    def _rebuild_arrays(self) -> None:
+        """(Re)builds every dense array derived from `self._G` +
+        `self._snapshot`: node index <-> node id, edge index <-> (u,v,k),
+        the CSR node->out-edge structure, per-edge travel_time/eta, and the
+        reachability mask. Called from `prepare` and from
+        `apply_disruption` (both warm and cold) -- never touches
+        `self._pheromone_arr`, which callers manage themselves since its
+        treatment differs between prepare (fresh) and warm disruption
+        (carried over by edge key).
+        """
+        G = self._G
 
-    def _build_adjacency(self) -> None:
-        """out_edges[u] = list of (v, k); all_edges = every (u, v, k) with
-        a snapshot travel_time entry."""
-        out_edges: dict[int, list[tuple[int, int]]] = {}
-        all_edges: list[EdgeKey] = []
-        for u, v, k in self._G.edges(keys=True):
-            if (u, v, k) not in self._snapshot.travel_time:
+        node_ids = list(G.nodes())
+        node_index: dict[int, int] = {nid: i for i, nid in enumerate(node_ids)}
+        n_nodes = len(node_ids)
+        node_y = np.empty(n_nodes, dtype=np.float64)
+        node_x = np.empty(n_nodes, dtype=np.float64)
+        for i, nid in enumerate(node_ids):
+            data = G.nodes[nid]
+            node_y[i] = data["y"]
+            node_x[i] = data["x"]
+
+        self._node_ids = node_ids
+        self._node_index = node_index
+        self._n_nodes = n_nodes
+        self._source_idx = node_index[self._source]
+        self._target_idx = node_index[self._target]
+
+        # Group edges by source node (dict preserves insertion order, same
+        # traversal order as the old `_out_edges` dict) so the CSR layout
+        # matches the order edges were previously offered to an ant.
+        per_node_edges: dict[int, list[int]] = {}
+        edge_keys: list[EdgeKey] = []
+        edge_v = []
+        edge_tt = []
+        travel_time = self._snapshot.travel_time
+        for u, v, k in G.edges(keys=True):
+            key = (u, v, k)
+            tt = travel_time.get(key)
+            if tt is None:
                 continue
-            out_edges.setdefault(u, []).append((v, k))
-            all_edges.append((u, v, k))
-        self._out_edges = out_edges
-        self._all_edges = all_edges
+            eidx = len(edge_keys)
+            edge_keys.append(key)
+            edge_v.append(node_index[v])
+            edge_tt.append(tt)
+            per_node_edges.setdefault(node_index[u], []).append(eidx)
 
-    def _update_reachability(self) -> None:
-        """Precompute the set of nodes from which the target is reachable
-        at all (reverse BFS on the current graph). This is NOT ant-level
-        repair: it is a fixed, once-per-graph constraint on the candidate
-        set every ant draws from, applied because on a real street network
-        (mean out-degree ~2.5, ~19% of nodes with out-degree 1) an
-        unguided tabu random-walk with eta = 1/travel_time alone dead-ends
-        on essentially every ant over paths tens of hops long -- pruning
-        provably-dead moves before they're taken is a legitimate
-        restriction of the action space, whereas "discard, don't repair"
-        (see module docstring / CLAUDE.md) is about ants that DO dead-end
-        anyway (tabu has locked them out of every remaining reachable
-        neighbour) or exceed max_steps; both still apply on top of this."""
+        n_edges = len(edge_keys)
+        self._edge_keys = edge_keys
+        self._edge_index = {key: i for i, key in enumerate(edge_keys)}
+        self._n_edges = n_edges
+        self._edge_v = np.array(edge_v, dtype=np.int64) if n_edges else _EMPTY_I
+        edge_tt_arr = np.array(edge_tt, dtype=np.float64) if n_edges else _EMPTY_F
+
+        indptr = np.zeros(n_nodes + 1, dtype=np.int64)
+        indices = np.empty(n_edges, dtype=np.int64)
+        pos = 0
+        for node_idx in range(n_nodes):
+            eids = per_node_edges.get(node_idx)
+            indptr[node_idx] = pos
+            if eids:
+                n = len(eids)
+                indices[pos : pos + n] = eids
+                pos += n
+        indptr[n_nodes] = pos
+        self._csr_indptr = indptr
+        self._csr_indices = indices
+
+        # Reachability: nodes from which the target is reachable at all
+        # (reverse BFS). Fixed, once-per-graph pruning of the candidate
+        # set -- see module docstring / Phase 4 rationale; not ant-level
+        # repair.
         try:
-            rev = self._G.reverse(copy=False)
-            self._can_reach_target = set(
+            rev = G.reverse(copy=False)
+            can_reach_ids = set(
                 nx.single_source_shortest_path_length(rev, self._target).keys()
             )
         except nx.NodeNotFound:
-            self._can_reach_target = set()
+            can_reach_ids = set()
+        can_reach_mask = np.zeros(n_nodes, dtype=bool)
+        for nid in can_reach_ids:
+            can_reach_mask[node_index[nid]] = True
+        self._can_reach_target = can_reach_ids  # kept for compatibility/introspection
+        self._edge_valid_reach = (
+            can_reach_mask[self._edge_v] if n_edges else _EMPTY_I.astype(bool)
+        )
+
+        # eta (and eta^beta, precomputed once): depends only on the
+        # snapshot's travel_time and, in goal-heuristic mode, on h(v) --
+        # neither varies step to step, so this is computed once per
+        # prepare/disruption rather than per ant per hop.
+        if self._use_goal_heuristic and n_edges:
+            target_y = self._G.nodes[self._target]["y"]
+            target_x = self._G.nodes[self._target]["x"]
+            max_speed_kph = 0.0
+            for _, _, data in G.edges(data=True):
+                sp = data.get("speed_kph")
+                if sp is not None and sp > max_speed_kph:
+                    max_speed_kph = float(sp)
+            if max_speed_kph <= 0:
+                max_speed_kph = 20.0  # graceful fallback for toy graphs
+            max_speed_mps = max_speed_kph * 1000.0 / 3600.0
+            node_h = _haversine_m(node_y, node_x, target_y, target_x) / max_speed_mps
+            edge_h = node_h[self._edge_v]
+            eta = 1.0 / (edge_tt_arr + edge_h)
+        elif n_edges:
+            eta = 1.0 / edge_tt_arr
+        else:
+            eta = _EMPTY_F
+
+        self._etapow = eta**self._beta if n_edges else _EMPTY_F
+        self._edge_tt = edge_tt_arr
+
+        # Plain-Python mirrors of every array the per-candidate hot path
+        # touches. Mean out-degree on this graph is 2.46 (19% of nodes have
+        # out-degree 1), so a candidate set is a 1-3 element sequence:
+        # numpy's per-call dispatch overhead on arrays that small is an
+        # order of magnitude larger than the arithmetic it performs, and
+        # profiling showed fancy-indexing/cumsum/searchsorted/np.ones over
+        # 2-3 element arrays dominating the whole solve. Scalar Python
+        # arithmetic over list slices is strictly faster at this size.
+        # numpy is retained where the array really is large -- the
+        # per-iteration evaporation/deposit/clip over all ~7,000 edges (see
+        # `step`), which is one vectorized pass instead of 7,000 Python
+        # loop iterations. `_pheromone_arr` stays the source of truth and
+        # the Python-side weight cache is re-derived from it once per
+        # iteration (`_refresh_weight_cache`).
+        indptr_l = indptr.tolist()
+        indices_l = indices.tolist()
+        edge_v_l = self._edge_v.tolist() if n_edges else []
+        valid_l = self._edge_valid_reach.tolist() if n_edges else []
+        self._etapow_l = self._etapow.tolist() if n_edges else []
+        # Edges whose head is provably unable to reach the target are
+        # filtered here once, so the per-candidate loop never sees them:
+        # `_csr_reachable[node] = [(edge_id, head_node_idx), ...]`.
+        self._csr_reachable = [
+            [
+                (eid, edge_v_l[eid])
+                for eid in indices_l[indptr_l[i] : indptr_l[i + 1]]
+                if valid_l[eid]
+            ]
+            for i in range(n_nodes)
+        ]
+        self._cand_base: list[list[tuple[int, int, float]]] = []
+
+    def _refresh_weight_cache(self) -> None:
+        """Re-derive the per-node candidate-weight cache from the numpy
+        pheromone array (the source of truth).
+
+        The transition weight tau(e)^alpha * eta(e)^beta depends only on
+        the pheromone, which changes exactly once per iteration (in
+        `step`), so within one iteration every ant computes the SAME weight
+        for the same edge. Computing all ~7,000 of them once per iteration
+        costs ~2 ms; computing them lazily cost ~100,000 multiplications
+        and index lookups per iteration. The cached value is bit-for-bit
+        the same product as the lazy one, so the ants' choices are
+        unchanged.
+
+        `_cand_base[node] = [(edge_id, head_node_idx, weight), ...]`,
+        already filtered to edges whose head can reach the target; the
+        per-ant `visited` filter is all that remains to apply."""
+        tau = self._pheromone_arr.tolist()
+        etapow = self._etapow_l
+        if self._alpha == 1.0:
+            self._cand_base = [
+                [(eid, v, tau[eid] * etapow[eid]) for eid, v in per_node]
+                for per_node in self._csr_reachable
+            ]
+        else:
+            alpha = self._alpha
+            self._cand_base = [
+                [(eid, v, (tau[eid] ** alpha) * etapow[eid]) for eid, v in per_node]
+                for per_node in self._csr_reachable
+            ]
+
+    def _pheromone_dict(self) -> dict[EdgeKey, float]:
+        return {key: float(v) for key, v in zip(self._edge_keys, self._pheromone_arr.tolist())}
 
     # -- construction -----------------------------------------------------
 
-    def _weighted_candidates(
-        self, node: int, visited: set[int]
-    ) -> list[list]:
-        """[v, k, weight] for every out-edge of `node` whose target is
-        neither already on the current path nor provably unable to reach
-        the destination. A mutable list (not a tuple) because
-        `_construct_ant` pops entries out of it in place as they're tried,
-        so a backtrack into this node resumes from the untried remainder
-        rather than re-trying an already-failed branch."""
-        out = []
-        for v, k in self._out_edges.get(node, []):
-            if v in visited or v not in self._can_reach_target:
-                continue
-            tau = self._pheromone.get((node, v, k), self._tau_min)
-            tt = self._snapshot.travel_time.get((node, v, k))
-            if tt is None:
-                continue
-            h = self._h(v) if self._use_goal_heuristic else 0.0
-            eta = 1.0 / (tt + h)
-            out.append([v, k, (tau ** self._alpha) * (eta ** self._beta)])
-        return out
+    def _weighted_candidates(self, node_idx: int, visited: bytearray) -> list:
+        """`[(edge_id, head_node_idx, weight), ...]` for every out-edge of
+        `node_idx` whose head is neither already on the ant's path nor
+        provably unable to reach the destination.
 
-    def _pick_and_remove(self, candidates: list[list]) -> tuple[int, int]:
-        """Weighted-random pick of one (v, k) from `candidates`, removing
-        it from the list in place (sampling without replacement -- a
-        backtrack into this same frame will not retry it)."""
-        total = sum(w for _, _, w in candidates)
+        A mutable list of immutable entries, because `_pick_and_remove`
+        pops entries out of it
+        in place, so a backtrack into this node resumes from the untried
+        remainder rather than re-trying an already-failed branch (sampling
+        without replacement).
+
+        Pure Python scalars by design -- see `_rebuild_arrays` for why
+        numpy is the wrong tool on a 1-3 element candidate set, and
+        `_refresh_weight_cache` for why the weights themselves are
+        cached per iteration rather than recomputed per visit.
+
+        NOTE: `_construct_ant` inlines this body rather than calling it
+        (two Python calls per hop, ~110,000 hops per iteration, was
+        measurably more expensive than the work itself). This method is
+        the readable reference form of that inlined code and is what
+        `test_aco_hot_loop_matches_reference_helpers` checks the inlined
+        loop against.
+        """
+        return [c for c in self._cand_base[node_idx] if not visited[c[1]]]
+
+    def _pick_and_remove(self, candidates: list) -> tuple[int, int]:
+        """Weighted-random pick of one (edge_id, head_node_idx) from
+        `candidates`, removing it from the list in place (sampling without
+        replacement -- a backtrack into this same frame will not retry
+        it). Roulette selection: one running accumulation, one RNG draw.
+
+        NOTE: inlined into `_construct_ant` for the same reason as
+        `_weighted_candidates`; kept as the reference form, and tested
+        against the inlined loop.
+        """
+        n = len(candidates)
+        total = 0.0
+        for c in candidates:
+            total += c[2]
         if total <= 0.0:
-            idx = self._rng.randrange(len(candidates))
+            idx = self._rng.randrange(n)
         else:
             r = self._rng.random() * total
             acc = 0.0
-            idx = len(candidates) - 1
-            for i, (_v, _k, w) in enumerate(candidates):
-                acc += w
+            idx = n - 1
+            for i, c in enumerate(candidates):
+                acc += c[2]
                 if r <= acc:
                     idx = i
                     break
-        v, k, _w = candidates.pop(idx)
-        return v, k
+        eid, v, _w = candidates.pop(idx)
+        return eid, v
 
     def _construct_ant(self) -> tuple[list[int], float, list[EdgeKey]] | None:
         """Build one ant's path from source to target via depth-first
@@ -406,63 +597,128 @@ class ACORouter(Router):
         need to go forward past max_steps hops is forced to backtrack
         instead of continuing).
 
+        Node/edge bookkeeping is by dense integer index internally (list
+        indexing, no dict/tuple hashing); only the returned path/edge_path
+        are converted back to node ids / (u,v,k) edge keys.
+
+        `_weighted_candidates` and `_pick_and_remove` are INLINED below
+        rather than called. This loop runs ~200,000 times per iteration
+        (~110,000 of those doing a full candidate build + weighted pick),
+        and at that call count the Python call overhead alone was a
+        double-digit percentage of the whole solve. The two methods remain
+        as the readable reference form of the inlined code, and
+        tests/test_aco.py checks that the inlined loop and the reference
+        helpers make identical choices from identical state.
+
         Returns (node_path, cost, edge_path), or None if discarded.
         """
-        target = self._target
-        path = [self._source]
-        edge_path: list[EdgeKey] = []
-        visited = {self._source}
+        source_idx = self._source_idx
+        target_idx = self._target_idx
+        path_idx = [source_idx]
+        edge_path_ids: list[int] = []
+        visited = bytearray(self._n_nodes)
+        visited[source_idx] = 1
         frames: list[list] = []
-        op_budget = self._max_steps * self._backtrack_multiplier
+        max_steps = self._max_steps
+        op_budget = max_steps * self._backtrack_multiplier
         ops = 0
+        depth = 0  # == len(path_idx) - 1, maintained rather than recomputed
+        last_idx = source_idx
+        cand_base = self._cand_base
+        rand = self._rng.random
+        randrange = self._rng.randrange
 
-        candidates = self._weighted_candidates(self._source, visited)
+        candidates = [c for c in cand_base[source_idx] if not visited[c[1]]]
 
         while True:
             ops += 1
             if ops > op_budget:
+                self._ops_total += ops
+                self._ants_total += 1
                 return None
 
-            if path[-1] == target:
+            if last_idx == target_idx:
                 break
 
-            if len(path) - 1 >= self._max_steps:
+            if depth >= max_steps:
                 candidates = []  # forward budget exhausted -> force backtrack
 
             if not candidates:
-                if len(path) == 1:
+                if depth == 0:
+                    self._ops_total += ops
+                    self._ants_total += 1
                     return None  # exhausted every branch back to the source
-                popped = path.pop()
-                edge_path.pop()
-                visited.discard(popped)
+                visited[path_idx.pop()] = 0
+                edge_path_ids.pop()
+                depth -= 1
+                last_idx = path_idx[-1]
                 candidates = frames.pop()
                 continue
 
-            v, k = self._pick_and_remove(candidates)
-            frames.append(candidates)  # resume point if we backtrack later
-            edge_path.append((path[-1], v, k))
-            path.append(v)
-            visited.add(v)
-            candidates = self._weighted_candidates(v, visited)
+            # -- inlined _pick_and_remove ------------------------------
+            n = len(candidates)
+            if n == 1:
+                # 61% of picks on this graph (mean out-degree 2.46, minus
+                # the visited/reachability filters). The RNG draw is still
+                # consumed, because the general branch below consumes
+                # exactly one draw for any candidate set with positive
+                # total weight and always selects index 0 when there is
+                # only one -- skipping the draw would silently shift the
+                # random stream.
+                if candidates[0][2] > 0.0:
+                    rand()
+                    idx = 0
+                else:
+                    idx = randrange(1)
+            else:
+                total = 0.0
+                for c in candidates:
+                    total += c[2]
+                if total <= 0.0:
+                    idx = randrange(n)
+                else:
+                    r = rand() * total
+                    acc = 0.0
+                    idx = n - 1
+                    for i, c in enumerate(candidates):
+                        acc += c[2]
+                        if r <= acc:
+                            idx = i
+                            break
+            eid, v_idx, _w = candidates.pop(idx)
+            # ----------------------------------------------------------
 
+            frames.append(candidates)  # resume point if we backtrack later
+            edge_path_ids.append(eid)
+            path_idx.append(v_idx)
+            visited[v_idx] = 1
+            depth += 1
+            last_idx = v_idx
+            # -- inlined _weighted_candidates --------------------------
+            candidates = [c for c in cand_base[v_idx] if not visited[c[1]]]
+
+        self._ops_total += ops
+        self._ants_total += 1
+        self._ants_completed += 1
+        node_ids = self._node_ids
+        path = [node_ids[i] for i in path_idx]
+        edge_path = [self._edge_keys[e] for e in edge_path_ids]
         cost = self._snapshot.cost_of_path(self._G, path)
         return path, cost, edge_path
 
     def _branching_factor(self) -> float:
-        threshold = self._tau_min + self._lambda_branching * (self._tau_max - self._tau_min)
-        counts = []
-        for u, neighbours in self._out_edges.items():
-            if not neighbours:
-                continue
-            n_sig = sum(
-                1
-                for (v, k) in neighbours
-                if self._pheromone.get((u, v, k), self._tau_min) > threshold
-            )
-            counts.append(n_sig)
-        if not counts:
+        if self._n_edges == 0:
             return 0.0
-        return sum(counts) / len(counts)
+        threshold = self._tau_min + self._lambda_branching * (self._tau_max - self._tau_min)
+        outdeg = np.diff(self._csr_indptr)
+        has_out = outdeg > 0
+        if not has_out.any():
+            return 0.0
+        significant = self._pheromone_arr > threshold
+        # edge -> source-node index, derived from the CSR structure.
+        edge_u = np.repeat(np.arange(self._n_nodes), outdeg)
+        counts = np.bincount(edge_u[significant], minlength=self._n_nodes)
+        return float(counts[has_out].mean())
 
     def step(self) -> float | None:
         self._iterations += 1
@@ -474,10 +730,12 @@ class ACORouter(Router):
                 ants_results.append(result)
 
         # Evaporation applies every iteration regardless of ant success.
-        for e in list(self._pheromone.keys()):
-            self._pheromone[e] = max(self._tau_min, self._pheromone[e] * (1.0 - self._rho))
+        if self._n_edges:
+            self._pheromone_arr *= 1.0 - self._rho
+            np.maximum(self._pheromone_arr, self._tau_min, out=self._pheromone_arr)
 
         if not ants_results:
+            self._refresh_weight_cache()
             self._empty_iterations += 1
             logger.info(
                 "ACORouter: iteration %d produced no valid ant (all dead-ended "
@@ -495,10 +753,12 @@ class ACORouter(Router):
 
         # Deposit on the iteration-best path only.
         delta = self._Q / iter_best_cost
-        for e in iter_best_edges:
-            if e not in self._pheromone:
-                self._pheromone[e] = self._tau_min
-            self._pheromone[e] = min(self._tau_max, self._pheromone[e] + delta)
+        iter_best_eids = np.array(
+            [self._edge_index[e] for e in iter_best_edges], dtype=np.int64
+        )
+        if iter_best_eids.size:
+            np.add.at(self._pheromone_arr, iter_best_eids, delta)
+            np.minimum(self._pheromone_arr, self._tau_max, out=self._pheromone_arr)
 
         # Update global best.
         if self._best_cost is None or iter_best_cost < self._best_cost:
@@ -509,12 +769,9 @@ class ACORouter(Router):
         # Dynamic tau bounds (standard MMAS), keyed off the global best.
         self._tau_max = 1.0 / (self._rho * self._best_cost)
         self._tau_min = self._tau_max / self._tau_min_ratio
-        for e in list(self._pheromone.keys()):
-            v = self._pheromone[e]
-            if v > self._tau_max:
-                self._pheromone[e] = self._tau_max
-            elif v < self._tau_min:
-                self._pheromone[e] = self._tau_min
+        if self._n_edges:
+            np.clip(self._pheromone_arr, self._tau_min, self._tau_max, out=self._pheromone_arr)
+        self._refresh_weight_cache()
 
         # Stall counter: compare THIS iteration's best path to the
         # previous iteration's best path (not to the global best).
@@ -548,9 +805,9 @@ class ACORouter(Router):
             G2 = self._G.copy()
             G2.remove_edges_from(list(removed))
             self._G = G2
-            self._build_adjacency()
-            self._update_reachability()
-            self._pheromone = {e: self._tau_max_init for e in self._all_edges}
+            self._rebuild_arrays()
+            self._pheromone_arr = np.full(self._n_edges, self._tau_max_init, dtype=np.float64)
+            self._refresh_weight_cache()
             self._tau_max = self._tau_max_init
             self._tau_min = self._tau_max_init / self._tau_min_ratio
             self._best_path = None
@@ -564,14 +821,19 @@ class ACORouter(Router):
             return
 
         # warm=True: retain pheromone, only invalidate the break.
+        old_pheromone = self._pheromone_dict()
+        for e in removed:
+            old_pheromone.pop(e, None)
+
         G2 = self._G.copy()
         G2.remove_edges_from(list(removed))
         self._G = G2
-        self._build_adjacency()
-        self._update_reachability()
+        self._rebuild_arrays()
 
-        for e in removed:
-            self._pheromone.pop(e, None)
+        new_pheromone = np.array(
+            [old_pheromone.get(key, self._tau_min) for key in self._edge_keys],
+            dtype=np.float64,
+        ) if self._n_edges else np.empty(0, dtype=np.float64)
 
         if self.config["disruption_strategy"] == "local_reset":
             broken_nodes: set[int] = set()
@@ -587,9 +849,13 @@ class ACORouter(Router):
                     undirected, n, cutoff=self._disruption_n_hop
                 )
                 near_nodes.update(lengths.keys())
-            for u, v, k in self._all_edges:
-                if u in near_nodes or v in near_nodes:
-                    self._pheromone[(u, v, k)] = self._tau_max
+            if near_nodes:
+                for i, (u, v, k) in enumerate(self._edge_keys):
+                    if u in near_nodes or v in near_nodes:
+                        new_pheromone[i] = self._tau_max
+
+        self._pheromone_arr = new_pheromone
+        self._refresh_weight_cache()
 
         # Invalidate the current best if it used a severed edge.
         if self._best_edges is not None and any(e in removed for e in self._best_edges):
@@ -605,7 +871,7 @@ class ACORouter(Router):
 
     def state(self) -> dict[str, Any]:
         return {
-            "pheromone": dict(self._pheromone),
+            "pheromone": self._pheromone_dict(),
             "tau_max": self._tau_max,
             "tau_min": self._tau_min,
             "best_path": list(self._best_path) if self._best_path is not None else None,
@@ -622,7 +888,12 @@ class ACORouter(Router):
         }
 
     def load_state(self, state: dict[str, Any]) -> None:
-        self._pheromone = dict(state["pheromone"])
+        pheromone_dict = dict(state["pheromone"])
+        self._pheromone_arr = np.array(
+            [pheromone_dict.get(key, self._tau_min) for key in self._edge_keys],
+            dtype=np.float64,
+        ) if self._n_edges else np.empty(0, dtype=np.float64)
+        self._refresh_weight_cache()
         self._tau_max = state["tau_max"]
         self._tau_min = state["tau_min"]
         self._best_path = list(state["best_path"]) if state["best_path"] is not None else None
