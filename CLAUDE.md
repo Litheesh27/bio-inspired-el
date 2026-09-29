@@ -69,6 +69,26 @@ that file has the detail.
       finding — both must be re-run. Caveat to document: deadness is
       context-dependent on the visited set, so the memo is an approximation
       that can prune genuinely viable paths.
+- [~] Phase 4d — IN FLIGHT as of 2026-09-29. Two jobs:
+      (a) Fix the congestion-snapshot cache race. Phase 4c's 30-pair run
+          crashed when 12 joblib workers raced on the BPR cache file
+          (PermissionError on atomic rename — Windows os.replace fails if the
+          destination is open for reading, which POSIX tolerates). Needs
+          per-writer temp file + retry, a serial pre-warm helper Phase 8 must
+          call, and a test that spawns real concurrent writers.
+          MUST be fixed before Phase 8's sweep.
+      (b) Re-measure Phase 4's exit criterion cleanly. Phase 4c's 86.7%
+          freeflow figure is untrustworthy in EITHER direction: 10 of its 30
+          pairs were also tuning pairs, and every number was seed 0 with a
+          one-pair margin. 4d draws fresh out-of-sample pairs, runs 5 seeds,
+          and reports a bootstrap 95% CI plus stratification by path length
+          (Phase 4c found all 4 failures were long-hop, 46-83 hops).
+          Measurement ONLY — no tuning, no threshold changes. "Indistinguishable
+          from the bar" is an acceptable and useful verdict.
+      IF RESUMING COLD AND THIS IS STILL UNTICKED: check `git status` for
+      uncommitted work and `docs/tuning/aco_sweep.md` for a Phase 4d section.
+      The agent checkpoints results to disk incrementally (JSONL), so partial
+      measurements are recoverable rather than needing a re-run.
 - [x] Phase 5 — Physarum tube-reinforcement model. Exit criterion PASSED:
       26/30 (87%) exact stretch-1.0 matches under freeflow. Laplacian built
       on an undirected projection (grounded at the sink); extracted paths are
