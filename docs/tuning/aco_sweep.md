@@ -712,3 +712,316 @@ backtracking.
 * Anything targeted at the long-hop tail (e.g. a candidate-list restriction
   or a local-search/2-opt daemon on the iteration-best path), which is what
   the failure analysis actually points at.
+
+# Phase 4d: out-of-sample, multi-seed re-measurement of the exit criterion
+
+Phase 4c's exit-criterion number (86.7% freeflow / 96.7% BPR heavy) is not
+wrong, but it is not trustworthy in EITHER direction, and both reasons were
+recorded as gaps in the Phase 4c summary above rather than discovered later:
+
+1. **A third of the sample was in-sample.** The 10 pairs the coarse re-tune
+   ran on are the first 10 of the 30 criterion pairs, because everything in
+   this sweep record was drawn from `random.Random(2024)`.
+2. **n = 1 in the stochastic dimension.** Every Phase 4c figure is algorithm
+   seed 0, and the freeflow verdict turned on ONE pair out of 30 -- 3.3
+   points, comfortably inside plausible seed-to-seed variation for a
+   stochastic search.
+
+Measurement is cheap now (~16 s/solve at budget 150), so Phase 4d re-measures
+properly. **Nothing was tuned, and no threshold was moved.** `configs/aco.yaml`
+is byte-identical to the file Phase 4c shipped; `aco.py` is untouched. This
+section reports what the shipped configuration actually does on data it has
+never seen.
+
+Reproduce with:
+
+```
+.venv/Scripts/python.exe scripts/measure_aco_criterion.py
+.venv/Scripts/python.exe scripts/measure_aco_criterion.py --report-only   # re-aggregate
+```
+
+## Protocol
+
+| | Phase 4c | Phase 4d |
+|---|---|---|
+| OD pair seed | 2024 (same draw as the tuning) | **4242 (fresh, held out)** |
+| pairs | 30 | 30 |
+| algorithm seeds | 1 (seed 0) | **5 (seeds 0-4)** |
+| solves | 60 | **300** |
+| budget | 150 (`suggested_budget`) | 150, unchanged |
+| mode | `use_goal_heuristic: false`, `use_dead_node_memo: true` | identical |
+| conditions | freeflow, BPR heavy (`heavy`, `time_bin=1`) | identical |
+| uncertainty reported | none | **two-stage bootstrap 95% CI** |
+
+`stretch = cost_aco / cost_dijkstra` is computed against Dijkstra on the
+SAME snapshot, and `stretch >= 1.0` is asserted on every one of the 300
+solves (CLAUDE.md invariant). No solve violated it.
+
+### Out-of-sample check (verified, not asserted)
+
+`scripts/measure_aco_criterion.py` prints this before it runs anything, and
+`tests/test_aco.py::test_out_of_sample_od_draw_is_disjoint_from_tuning_pairs`
+asserts it as a fast test:
+
+| check | result |
+|---|---|
+| new pairs | 30 (30 distinct) |
+| ordered overlap with the 10 TUNING pairs | **0** |
+| ordered overlap with all 30 Phase 4c criterion pairs | **0** |
+| unordered overlap (same corridor, reversed) with Phase 4c | **0** |
+| shared endpoint NODES with Phase 4c (context only) | 2 of 60 slots, graph has 2,856 nodes |
+
+Node-level overlap is reported but NOT treated as contamination: two
+samples of 60 node slots drawn from 2,856 nodes are expected to share an
+endpoint occasionally, and a shared endpoint is not a shared routing
+problem. Pair-level overlap is zero on both the ordered and the unordered
+test, so this is a genuinely held-out sample.
+
+### What the confidence interval is over
+
+A two-stage (clustered) percentile bootstrap, 10,000 resamples, seed 0
+(`_bootstrap_ci` in the script):
+
+* resample the 30 OD pairs with replacement -- this is the dominant term and
+  is what turns the estimate into a claim about the network's OD population
+  rather than about these particular 30 pairs;
+* then resample the 5 algorithm seeds with replacement *within* each
+  resampled pair, since a pair's 5 seeds are not independent draws from the
+  population.
+
+A seeds-only bootstrap (n = 5) would be uselessly wide and unstable; a
+pairs-only bootstrap would omit the stochastic term entirely. Both sources
+are in the interval below.
+
+### Path-length strata
+
+Pairs are split into short / medium / long by **terciles of this sample's
+own Dijkstra hop counts**, computed per condition (freeflow and BPR heavy
+shortest paths differ, so a pair's hop count differs too). Terciles are a
+deliberate choice over fixed hop thresholds: Phase 4c's failing hop counts
+(46-83) are already known, so any fixed cut would have been chosen with the
+answer in hand. The tercile rule depends only on the hop distribution and
+never on which pairs failed.
+
+## Results
+
+300 solves, all completed, **zero failed solves** (every pair routable under
+both conditions) and **zero stretch-invariant violations** -- the minimum
+observed stretch is exactly 1.000 under both conditions, never below.
+
+### Headline mode (`use_goal_heuristic: false`), freeflow
+
+| algorithm seed | ok/n | frac <=1.10 | median | mean | worst | median iters | ant completion |
+|---|---|---|---|---|---|---|---|
+| 0 | 24/30 | 80.0% | 1.000 | 1.046 | 1.246 | 98 | 85% |
+| 1 | 22/30 | 73.3% | 1.000 | 1.053 | 1.263 | 90 | 85% |
+| 2 | 22/30 | 73.3% | 1.000 | 1.076 | 1.565 | 92 | 85% |
+| 3 | 21/30 | 70.0% | 1.000 | 1.064 | 1.318 | 92 | 85% |
+| 4 | 21/30 | 70.0% | 1.006 | 1.069 | 1.359 | 92 | 85% |
+| **mean** | | **73.3%** | | | | | |
+
+**mean 73.3%, bootstrap 95% CI [58.7%, 86.7%], min 70.0% / max 80.0%
+(sd 4.1 points).**
+
+### Headline mode (`use_goal_heuristic: false`), BPR heavy
+
+| algorithm seed | ok/n | frac <=1.10 | median | mean | worst | median iters | ant completion |
+|---|---|---|---|---|---|---|---|
+| 0 | 24/30 | 80.0% | 1.022 | 1.054 | 1.322 | 103 | 86% |
+| 1 | 27/30 | **90.0%** | 1.000 | 1.040 | 1.355 | 111 | 87% |
+| 2 | 24/30 | 80.0% | 1.023 | 1.048 | 1.356 | 118 | 86% |
+| 3 | 24/30 | 80.0% | 1.019 | 1.050 | 1.331 | 131 | 87% |
+| 4 | 22/30 | 73.3% | 1.012 | 1.057 | 1.356 | 113 | 86% |
+| **mean** | | **80.7%** | | | | | |
+
+**mean 80.7%, bootstrap 95% CI [68.0%, 92.0%], min 73.3% / max 90.0%
+(sd 6.0 points).**
+
+## Verdict: the exit criterion is MISSED, and by more than Phase 4c thought
+
+| condition | Phase 4c (in-sample, 1 seed) | Phase 4d (out-of-sample, 5 seeds) | verdict |
+|---|---|---|---|
+| freeflow | 86.7% | **73.3% [58.7 - 86.7]** | **MISSED** -- the entire CI is below 90% |
+| BPR heavy | 96.7% | **80.7% [68.0 - 92.0]** | **INDISTINGUISHABLE** -- the CI straddles 90% |
+
+The criterion demands both conditions, and freeflow misses with its whole
+confidence interval below the bar, so **Phase 4's exit criterion is not
+met.** No hyperparameter, threshold or algorithm was changed to produce
+this number, and none was changed after seeing it.
+
+Two things about this table matter more than the verdict itself.
+
+**1. Phase 4c's figures were at the optimistic edge, in both conditions.**
+86.7% is *exactly* the upper bound of the Phase 4d freeflow CI, and 96.7%
+is outside the BPR-heavy CI entirely. That is the expected signature of a
+partly in-sample estimate reported from a single favourable seed: it is not
+"wrong", it is the best case of a distribution whose centre is 13-16 points
+lower. This is the clearest justification the project has for insisting on
+held-out samples in Phase 8.
+
+**2. One seed genuinely could have decided the BPR-heavy verdict.** Seed 1
+gives 90.0% -- an exact pass -- and seed 4 gives 73.3%. A single-seed
+measurement of the same configuration, on the same 30 pairs, could honestly
+have reported either "passes" or "misses badly" depending only on which
+integer was handed to `prepare()`. Freeflow swings 70.0-80.0% over the same
+five seeds. Any future single-seed quality claim in this project should be
+read with a ~10-17 point band around it.
+
+The confidence intervals are wide (±14 points freeflow, ±12 BPR heavy) and
+that is honest rather than fixable by arithmetic: 30 OD pairs is a small
+sample for a proportion near 0.8. Narrowing it needs more *pairs*, not more
+seeds -- the pair-resampling term dominates. What makes the freeflow verdict
+firm despite the width is that the interval's upper end (86.7%) is still
+below the bar.
+
+Phase 4c's qualitative claim that **freeflow is the harder condition
+survives** (73.3% vs 80.7%), and for the reason given there: under heavy
+congestion the cost surface flattens, so many more routes sit within 10% of
+optimal. The effect is smaller than the 86.7-vs-96.7 gap suggested.
+
+## Where the failure lives: path length, confirmed and quantified
+
+Phase 4c asserted, from four pairs, that the failures are all long-hop. The
+larger independent sample **confirms it, strongly, under both conditions.**
+Fractions are over the 50 solves in each tercile (10 pairs x 5 seeds):
+
+| condition | stratum | hops | pairs | frac <=1.10 | median stretch | worst |
+|---|---|---|---|---|---|---|
+| freeflow | short | 6-28 | 10 | **88.0%** | 1.000 | 1.446 |
+| freeflow | medium | 35-47 | 10 | **84.0%** | 1.000 | 1.224 |
+| freeflow | **long** | **49-88** | 10 | **48.0%** | **1.126** | 1.565 |
+| BPR heavy | short | 6-36 | 10 | **94.0%** | 1.000 | 1.123 |
+| BPR heavy | medium | 37-50 | 10 | **90.0%** | 1.000 | 1.356 |
+| BPR heavy | **long** | **53-80** | 10 | **58.0%** | **1.079** | 1.283 |
+
+The long tercile is where essentially the entire shortfall lives, and it is
+the only stratum whose *median* pair misses the bar under freeflow. Short
+and medium pairs are solved optimally at the median under both conditions.
+
+A counterfactual that sizes the effect: if the long tercile merely performed
+as well as the short one, the overall figure would be **86.7% freeflow**
+(110/150 -> 130/150) and **92.7% BPR heavy** (121/150 -> 139/150). So the
+long tail alone accounts for the whole BPR-heavy shortfall -- fixing it
+would convert that condition to a pass -- but under freeflow it does *not*:
+even with a perfect long tercile, freeflow would still land at 86.7% and
+still miss. **Freeflow has a second, smaller problem spread across short and
+medium pairs, and no amount of long-hop-specific work would close it.**
+That is a more useful statement for the paper than "long pairs are hard".
+
+### Pair-level structure: how much is the pair, how much is the seed?
+
+| | freeflow | BPR heavy |
+|---|---|---|
+| pairs meeting the bar on **all 5** seeds | 18/30 | 22/30 |
+| pairs meeting it on **no** seed | 4/30 | 1/30 |
+| pairs that are **seed-dependent** | **8/30** | **7/30** |
+
+Hop counts of the never-solved pairs: 35, 49, 81, 82 (freeflow) and 49 (BPR
+heavy). Hop counts of the seed-dependent pairs: 18, 25, 26, 46, 59, 67, 67,
+88 (freeflow) and 25, 53, 56, 73, 75, 76, 78 (BPR heavy).
+
+Roughly a quarter of pairs are coin-flips. A pair is not simply "solvable"
+or "not"; for a meaningful minority the colony converges to a good corridor
+or a mediocre one depending on the seed, which is the mechanism behind the
+per-seed spread above.
+
+That variance is bimodal rather than gentle, and it is not confined to long
+pairs. Freeflow pair 9 is a **26-hop** pair -- comfortably in the short
+tercile -- whose five stretches are `{1.000, 1.000, 1.000, 1.233, 1.446}`:
+the exact optimum on three seeds and a catastrophic corridor lock-in on the
+other two. (The sample's single worst solve, 1.565, is a long pair, 88 hops,
+which likewise scores ~1.035 on three of its five seeds.) So the tail is not
+"ACO gets long pairs slightly wrong"; it is "on some pairs the colony
+occasionally locks onto a badly wrong corridor and never leaves it", and
+long pairs simply offer more opportunities for that to happen.
+
+Other diagnostics, both conditions: ant completion is stable at 85-87%
+across every seed (the dead-node memo's contribution is not seed-sensitive),
+median iterations 90-98 (freeflow) and 103-131 (BPR heavy), and MMAS's own
+convergence criterion fires within budget on 79% of freeflow and 69% of
+BPR-heavy solves -- so most failures are settled local optima rather than
+unfinished searches, exactly as Phase 4c found.
+
+## What Phase 4d deliberately did NOT do
+
+No tuning. `configs/aco.yaml` and `algorithms/aco.py` are untouched by this
+phase; the only source changes are the snapshot-cache concurrency fix
+(below), the measurement script, and the tests. The temptation with a 73.3%
+against a 90% bar is to go hunting for the 17 points, and the failure
+analysis even points somewhere specific (a candidate-list restriction or a
+2-opt daemon on the iteration-best path, both aimed at the long tercile).
+That work would be a new phase with its own held-out measurement, not a
+patch applied to this one -- tuning against the sample you are reporting is
+precisely the error Phase 4d exists to correct.
+
+`suggested_budget` was not raised either. Phase 4c established the budget
+curve is flat from 150, and 79%/69% of solves converge by MMAS's criterion
+inside the budget, so the failures are not a budget artefact.
+
+## Wall-clock (NOT a performance figure)
+
+300 solves in 11.3 minutes on 10 worker processes. That number is for
+planning sweeps only: it is a heavily parallel run on a machine whose
+throughput swings up to 3.4x with thermal state, and the measurement-
+conditions caveat above forbids reading it as a speed result.
+`scripts/bench_aco.py` remains the only speed measurement.
+
+## Snapshot-cache concurrency fix (shipped with Phase 4d)
+
+Phase 4c's 30-pair run crashed halfway through with `PermissionError` out of
+the BPR snapshot cache. The cause was in the cache write, not in joblib:
+
+```python
+tmp = path.with_suffix(".json.tmp")   # SAME temp path for every writer
+...
+tmp.replace(path)
+```
+
+`path.with_suffix(".json.tmp")` is a pure function of the cache key, so all
+12 workers computing the same cold snapshot wrote to one shared temp file
+and then raced to rename it. Two distinct failures follow, and on Windows
+both are reachable where POSIX tolerates them:
+
+1. two writers interleave inside one temp file, so what lands at the final
+   path can be spliced or truncated;
+2. `os.replace` fails with `ERROR_SHARING_VIOLATION` while *any* process
+   holds a handle on the source or the destination -- including an innocent
+   concurrent *reader* of the cache.
+
+Reproduced deterministically on this machine: 6 writer + 4 reader processes
+released onto a cold cache path produced **5 `PermissionError [WinError 32]`
+failures out of 6 writers**.
+
+The fix (`src/bioroute/congestion/base.py`, used by both `BPRProvider` and
+`SUMOProvider`, which had identical code):
+
+* `write_json_atomic` -- a temp file unique per writer
+  (`pid.thread.uuid8`), `fsync` before the replace, `os.replace` with
+  bounded exponential-backoff retry on sharing violations, and a
+  "did another writer already land a valid file?" check that treats losing
+  the race as success (snapshots are deterministic given their cache key,
+  so every concurrent writer produces the same bytes);
+* `read_json_cache` -- validates on read. Absent, unparseable, truncated or
+  structurally incomplete all collapse to `None` ("recompute"), never a
+  partially-believed snapshot; the sharing-violation window on the *read*
+  side gets its own short retry so a worker is not sent off to recompute a
+  10-increment BPR assignment for nothing;
+* `prewarm_snapshots` -- the belt-and-braces half. Materialises every needed
+  snapshot **serially, before any parallelism**, so workers only ever read.
+  `scripts/measure_aco_criterion.py` calls it, and **Phase 8's runner must
+  do the same**.
+
+Regression-tested by `tests/test_congestion.py`, with real concurrency
+rather than a happy-path round trip (which passes against the old code):
+6 spawned writer processes + 4 reader processes on a cold cache, 8 threads
+driving `BPRProvider.snapshot()` on a cold cache, five corrupt-file shapes,
+and a pre-warm test that asserts every cache file is readable afterwards.
+
+## Effect on the Phase 4c "not tried" list
+
+* held-out OD sample -- **done** (this section);
+* multi-seed repetition -- **done** (5 seeds; it changed the verdict's size,
+  and nearly its sign on BPR heavy);
+* `k_stall` / `branching_factor_threshold` re-sweep -- still not tried;
+* long-hop-targeted work (candidate lists, 2-opt daemon) -- still not tried,
+  and now quantified as worth at most +13 points freeflow / +12 BPR heavy.

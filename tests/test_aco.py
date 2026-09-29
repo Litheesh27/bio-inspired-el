@@ -3,6 +3,14 @@ determinism, the stretch invariant, and both disruption-recovery
 strategies. The 30-OD-pair exit-criterion measurement (>=90% of pairs at
 stretch <= 1.10, under freeflow AND heavy BPR) lives in the slow test at
 the bottom, marked @pytest.mark.slow.
+
+Phase 4d: the slow exit-criterion tests now draw their OD pairs from the
+HELD-OUT sample (OD_SAMPLE_SEED_OUT_OF_SAMPLE) rather than the draw the
+hyperparameters were tuned on, and the disjointness of the two samples is
+itself asserted by a fast test. The definitive multi-seed measurement, with
+a bootstrap confidence interval and path-length stratification, is
+`scripts/measure_aco_criterion.py`; these slow tests are the single-seed
+regression guard for it.
 """
 
 from __future__ import annotations
@@ -29,6 +37,24 @@ from bioroute.algorithms.aco import ACORouter, DEFAULT_CONFIG
 CONFIG_PATH = ROOT / "configs" / "area_central_blr.yaml"
 CONGESTION_CONFIG_PATH = ROOT / "configs" / "congestion.yaml"
 ACO_CONFIG_PATH = ROOT / "configs" / "aco.yaml"
+
+# OD-sample seeds. Phase 4 through 4c drew every pair -- tuning pairs AND
+# exit-criterion pairs -- from OD_SAMPLE_SEED_TUNING, so 10 of the 30
+# criterion pairs were in-sample for the tuning. Phase 4d re-measures the
+# criterion on a FRESH draw from a different seed, which shares no pair with
+# the tuning sample (asserted by
+# test_out_of_sample_od_draw_is_disjoint_from_tuning_pairs below).
+OD_SAMPLE_SEED_TUNING = 2024
+N_TUNING_PAIRS = 10
+OD_SAMPLE_SEED_OUT_OF_SAMPLE = 4242
+
+
+def _od_sample(G, seed: int, n_pairs: int) -> list[tuple]:
+    """The project's standard OD draw. Identical procedure everywhere; only
+    the seed distinguishes the tuning sample from the held-out one."""
+    rng = random.Random(seed)
+    nodes = sorted(G.nodes())
+    return [tuple(rng.sample(nodes, 2)) for _ in range(n_pairs)]
 
 
 # --------------------------------------------------------------------------
@@ -501,6 +527,38 @@ def test_aco_determinism_holds_in_both_memo_modes(use_dead_node_memo):
     assert out[0].trace == out[1].trace
 
 
+def test_out_of_sample_od_draw_is_disjoint_from_tuning_pairs(real_graph):
+    """Phase 4d: the held-out criterion sample must share NO pair with the
+    sample the hyperparameters were tuned on.
+
+    This is the guard that makes the Phase 4d number an out-of-sample
+    estimate rather than a partly in-sample one. Phase 4c's 30 criterion
+    pairs included, as their first 10, the exact pairs the coarse re-tune
+    used -- a third of that sample was in-sample, which is why the
+    measurement is being repeated at all. Checked both as ordered pairs
+    (the actual routing problems) and unordered (same corridor, reversed).
+
+    Shared endpoint NODES are NOT asserted away: with 2,856 nodes and 60
+    node slots per sample a couple of coincidental shared endpoints are
+    expected, and a shared endpoint is not a shared routing problem."""
+    tuning_all = _od_sample(real_graph, OD_SAMPLE_SEED_TUNING, 30)
+    tuning = tuning_all[:N_TUNING_PAIRS]
+    held_out = _od_sample(real_graph, OD_SAMPLE_SEED_OUT_OF_SAMPLE, 30)
+
+    assert len(set(held_out)) == 30, "the held-out draw contains duplicate pairs"
+    assert not (set(held_out) & set(tuning)), "held-out sample overlaps the TUNING pairs"
+    assert not (set(held_out) & set(tuning_all)), (
+        "held-out sample overlaps the Phase 4c criterion pairs"
+    )
+
+    def unordered(pairs):
+        return {frozenset(p) for p in pairs}
+
+    assert not (unordered(held_out) & unordered(tuning_all)), (
+        "held-out sample reuses a Phase 4c corridor in reverse"
+    )
+
+
 # --------------------------------------------------------------------------
 # Slow: the actual exit-criterion measurement (30 OD pairs x 2 congestion
 # levels). Not run by default `pytest tests/ -v`.
@@ -508,7 +566,8 @@ def test_aco_determinism_holds_in_both_memo_modes(use_dead_node_memo):
 
 
 def _measure_exit_criterion(
-    real_graph, od_pairs, snap, use_goal_heuristic, budget, use_dead_node_memo=None
+    real_graph, od_pairs, snap, use_goal_heuristic, budget,
+    use_dead_node_memo=None, seed=0,
 ):
     """Run ACO on every OD pair and report everything the Phase 4 exit
     criterion is graded on: fraction at stretch<=1.10, median/worst
@@ -537,7 +596,7 @@ def _measure_exit_criterion(
             use_goal_heuristic=use_goal_heuristic,
             use_dead_node_memo=use_dead_node_memo,
         )
-        a_router.prepare(real_graph, s, t, snap, seed=0)
+        a_router.prepare(real_graph, s, t, snap, seed=seed)
         t0 = time.perf_counter()
         a_result = run_to_convergence(a_router, budget=budget)
         walls.append(time.perf_counter() - t0)
@@ -588,25 +647,39 @@ def test_aco_exit_criterion_30_od_pairs_no_heuristic(real_graph, area_cfg, tmp_p
     project reports against -- an honest miss here is a real result, not a
     reason to weaken the assertion (see docs/tuning/aco_sweep.md).
 
-    MEASURED IN PHASE 4C, AND IT CURRENTLY FAILS ON FREEFLOW:
+    PHASE 4D: this test now runs on the HELD-OUT OD sample
+    (OD_SAMPLE_SEED_OUT_OF_SAMPLE), not the draw the hyperparameters were
+    tuned on. It is a single-seed spot check of a number that Phase 4d
+    measured properly across 5 algorithm seeds with a bootstrap CI --
+    `scripts/measure_aco_criterion.py` is the real measurement, and this
+    test exists so a regression cannot slip through `pytest -m slow`.
 
-        freeflow    26/30 = 86.7% at stretch<=1.10  (misses the 90% bar)
-        bpr_heavy   29/30 = 96.7%                   (passes)
+    MEASURED IN PHASE 4D (30 held-out pairs x 5 seeds, budget 150), AND THE
+    CRITERION IS MISSED:
 
-    at `suggested_budget=150`, seed 0, median stretch 1.000 / 1.009, worst
-    1.289 / 1.171, ant completion 82% / 81%. All four freeflow failures are
-    long-hop pairs (46-83 hops) and three of them have already CONVERGED,
-    so they are settled local optima rather than unfinished searches;
-    doubling the budget to 300 changes nothing.
+        freeflow    mean 73.3%  [bootstrap 95% CI 58.7-86.7]  per-seed 70.0-80.0%
+        bpr_heavy   mean 80.7%  [bootstrap 95% CI 68.0-92.0]  per-seed 73.3-90.0%
+
+    Freeflow misses with its entire CI below the 90% bar; BPR heavy is
+    statistically indistinguishable from the bar. Both are well below the
+    Phase 4c figures (86.7% / 96.7%), which were measured on a partly
+    in-sample draw at a single favourable seed -- 86.7% is exactly the upper
+    end of the freeflow CI. Seed 0, which is what THIS test runs, gives
+    80.0% / 80.0%, the most favourable freeflow seed of the five, so the
+    single number it prints should not be quoted on its own.
+
+    The failure is concentrated in long paths: by hop-count tercile,
+    freeflow scores 88.0% / 84.0% / 48.0% (short / medium / long) and BPR
+    heavy 94.0% / 90.0% / 58.0%. Roughly a quarter of pairs are
+    seed-dependent (pass on some seeds, fail on others).
 
     This assertion is deliberately left at 0.90. A failing slow test that
     states the real number is the honest record of a missed exit criterion;
-    relaxing it, or switching the default to the goal-directed mode (which
-    measures no better -- 86.7% freeflow, 90.0% BPR heavy), would be moving
-    the goalpost. See docs/tuning/aco_sweep.md's Phase 4c section."""
-    rng = random.Random(2024)
-    nodes = sorted(real_graph.nodes())
-    od_pairs = [tuple(rng.sample(nodes, 2)) for _ in range(30)]
+    relaxing it, switching the default to the goal-directed mode (which
+    measured no better in Phase 4c), or tuning against this sample would all
+    be moving the goalpost. See docs/tuning/aco_sweep.md's Phase 4d
+    section."""
+    od_pairs = _od_sample(real_graph, OD_SAMPLE_SEED_OUT_OF_SAMPLE, 30)
 
     bpr = BPRProvider(
         real_graph, area_cfg, CONGESTION_CONFIG_PATH, cache_dir=tmp_path / "bpr_cache"
@@ -629,8 +702,9 @@ def test_aco_exit_criterion_30_od_pairs_no_heuristic(real_graph, area_cfg, tmp_p
         assert r["frac"] >= 0.90, (
             f"{level}: only {r['frac']:.0%} of pairs met stretch<=1.10 "
             f"(median {r['median']:.3f}, worst {r['worst']:.3f}). This is the "
-            "measured result -- see docs/tuning/aco_sweep.md Phase 4c. Do NOT "
-            "weaken this assertion to make it pass."
+            "measured result on the HELD-OUT sample -- see "
+            "docs/tuning/aco_sweep.md Phase 4d. Do NOT weaken this assertion, "
+            "and do NOT tune against these pairs, to make it pass."
         )
 
 
@@ -641,10 +715,15 @@ def test_aco_exit_criterion_30_od_pairs_goal_heuristic_ablation(real_graph, area
     project's chosen headline mode, so this does not hard-assert the 90%
     bar the same way the no-heuristic test does; it still asserts a much
     weaker sanity floor (>0) so a real regression (e.g. every ant failing)
-    is still caught."""
-    rng = random.Random(2024)
-    nodes = sorted(real_graph.nodes())
-    od_pairs = [tuple(rng.sample(nodes, 2)) for _ in range(30)]
+    is still caught.
+
+    Phase 4d moved this onto the same held-out OD sample as the headline
+    test, so the two remain directly comparable. Phase 4d did not re-measure
+    the ablation across seeds -- the multi-seed evidence covers the headline
+    mode only, and Phase 4c's conclusion that the goal heuristic buys
+    nothing is a single-seed result that has NOT been re-checked against the
+    seed spread Phase 4d exposed."""
+    od_pairs = _od_sample(real_graph, OD_SAMPLE_SEED_OUT_OF_SAMPLE, 30)
 
     bpr = BPRProvider(
         real_graph, area_cfg, CONGESTION_CONFIG_PATH, cache_dir=tmp_path / "bpr_cache"

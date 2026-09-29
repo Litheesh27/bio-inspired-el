@@ -36,8 +36,19 @@ that file has the detail.
       coverage (no geometric fallback needed). See `SUMOProvider` in
       `congestion/sumo.py` and the join logic in `network/ids.py`.
 - [x] Phase 3 — Classical baseline: `Router` ABC, Dijkstra, A* (cost equality vs. Dijkstra on 100 OD pairs)
-- [~] Phase 4 — ACO (MMAS) implemented and tested, exit criterion NOT yet
-      measured. Headline mode is PURELY LOCAL (`use_goal_heuristic: false`,
+- [x] Phase 4 — ACO (MMAS) implemented, tuned and measured. **Exit criterion
+      MISSED — see Phase 4d for the authoritative numbers and CIs.** The
+      stretch-1.157 plateau noted below was a PRE-MEMO observation; Phase 4c
+      superseded it (the plateau was largely ants re-entering dead subtrees).
+      The goal-directed ablation buys nothing: identical to purely-local under
+      freeflow, worse under BPR heavy, because h(v) is a free-flow great-circle
+      bound that steers ants toward geometrically direct routes exactly when
+      those are congested. So the methodologically fair default is also the
+      better-performing one. Freeflow is the HARDER condition for ACO --
+      congestion flattens the cost surface and more routes land within 10% of
+      optimal, which is the opposite of the naive expectation and is a
+      reportable result.
+      Headline mode is PURELY LOCAL (`use_goal_heuristic: false`,
       eta = 1/travel_time); the goal-directed variant (eta = 1/(tt + h(v)),
       A*'s heuristic) is a reported ablation, not the default — giving ACO
       target-location information Physarum never gets would make the
@@ -69,26 +80,34 @@ that file has the detail.
       finding — both must be re-run. Caveat to document: deadness is
       context-dependent on the visited set, so the memo is an approximation
       that can prune genuinely viable paths.
-- [~] Phase 4d — IN FLIGHT as of 2026-09-29. Two jobs:
-      (a) Fix the congestion-snapshot cache race. Phase 4c's 30-pair run
-          crashed when 12 joblib workers raced on the BPR cache file
-          (PermissionError on atomic rename — Windows os.replace fails if the
-          destination is open for reading, which POSIX tolerates). Needs
-          per-writer temp file + retry, a serial pre-warm helper Phase 8 must
-          call, and a test that spawns real concurrent writers.
-          MUST be fixed before Phase 8's sweep.
-      (b) Re-measure Phase 4's exit criterion cleanly. Phase 4c's 86.7%
-          freeflow figure is untrustworthy in EITHER direction: 10 of its 30
-          pairs were also tuning pairs, and every number was seed 0 with a
-          one-pair margin. 4d draws fresh out-of-sample pairs, runs 5 seeds,
-          and reports a bootstrap 95% CI plus stratification by path length
-          (Phase 4c found all 4 failures were long-hop, 46-83 hops).
-          Measurement ONLY — no tuning, no threshold changes. "Indistinguishable
-          from the bar" is an acceptable and useful verdict.
-      IF RESUMING COLD AND THIS IS STILL UNTICKED: check `git status` for
-      uncommitted work and `docs/tuning/aco_sweep.md` for a Phase 4d section.
-      The agent checkpoints results to disk incrementally (JSONL), so partial
-      measurements are recoverable rather than needing a re-run.
+- [x] Phase 4d — Cache race fixed; exit criterion re-measured cleanly.
+      VERDICT: **Phase 4's exit criterion is MISSED.** 30 held-out pairs
+      (draw seed 4242, zero overlap with tuning or Phase 4c pairs) x 5 seeds
+      x 2 conditions = 300 solves, 0 failed, stretch >= 1.0 held on all 300.
+        freeflow   73.3%, bootstrap 95% CI [58.7, 86.7]  -- clear miss, whole CI below 90
+        BPR heavy  80.7%, bootstrap 95% CI [68.0, 92.0]  -- indistinguishable from the bar
+      Phase 4c's 86.7%/96.7% were in-sample single-seed estimates at a
+      favourable seed: 86.7% is EXACTLY the upper CI bound here, and 96.7% is
+      outside the BPR-heavy CI entirely. Seed 1 alone gives BPR heavy exactly
+      90.0% (a pass) while seed 4 gives 73.3% -- a single-seed run could
+      honestly have reported either. THIS IS WHY SINGLE-SEED IN-SAMPLE
+      NUMBERS ARE NOT REPORTABLE IN THIS PROJECT.
+      Path-length stratification (terciles): freeflow 88.0 / 84.0 / **48.0**%,
+      BPR heavy 94.0 / 90.0 / **58.0**%. The long tercile accounts for the
+      ENTIRE BPR-heavy shortfall but NOT freeflow's -- freeflow would still
+      miss at 86.7% even if long pairs matched short ones, so it has a second
+      problem spread across short/medium pairs. Failure mode is "the colony
+      locks onto a badly wrong corridor and never leaves it": 8/30 freeflow
+      pairs are seed-dependent (one 26-hop pair gives {1.000, 1.000, 1.000,
+      1.233, 1.446}), and MMAS's own convergence fires on 79%/69% of solves,
+      so these are settled local optima, not unfinished searches.
+      Cache fix: both providers wrote to a temp path that was a pure function
+      of the cache key, so concurrent writers shared ONE temp file; Windows
+      os.replace additionally fails while any process holds a handle on source
+      OR destination, including a reader. Now: unique temp per writer, fsync,
+      retry with backoff, validate-on-read (corrupt/truncated -> recompute,
+      never half-believed), and `prewarm_snapshots()` in `congestion/base.py`.
+      **PHASE 8'S RUNNER MUST CALL `prewarm_snapshots()` BEFORE PARALLELISING.**
 - [x] Phase 5 — Physarum tube-reinforcement model. Exit criterion PASSED:
       26/30 (87%) exact stretch-1.0 matches under freeflow. Laplacian built
       on an undirected projection (grounded at the sink); extracted paths are

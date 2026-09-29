@@ -47,7 +47,11 @@ import networkx as nx
 import yaml
 
 from bioroute.config import AreaConfig, config_hash
-from bioroute.congestion.base import CongestionProvider
+from bioroute.congestion.base import (
+    CongestionProvider,
+    load_snapshot_cache,
+    save_snapshot_cache,
+)
 from bioroute.congestion.snapshot import EdgeKey, TrafficSnapshot
 from bioroute.network.ids import (
     ParsedSumoEdge,
@@ -542,37 +546,17 @@ class SUMOProvider(CongestionProvider):
         name = f"sumo_{self._area_hash}_{self._sumo_cfg_hash}_{level}_bin0.json"
         return self._cache_dir / name
 
+    # Phase 4d: identical treatment to BPRProvider -- this provider had the
+    # SAME shared-temp-file cache-write race (`path.with_suffix('.json.tmp')`
+    # is a pure function of the cache key, so concurrent writers collided and
+    # `replace` raised PermissionError on Windows). Both now delegate to the
+    # concurrency-safe primitives in congestion/base.py.
+
     @staticmethod
     def _load_cache(path: Path) -> TrafficSnapshot | None:
-        if not path.exists():
-            return None
-        with path.open("r", encoding="utf-8") as f:
-            raw = json.load(f)
-        travel_time = {
-            tuple(int(x) for x in key.split("_")): float(val)
-            for key, val in raw["travel_time"].items()
-        }
-        return TrafficSnapshot(
-            level=raw["level"],
-            time_bin=raw["time_bin"],
-            source=raw["source"],
-            travel_time=travel_time,
-            meta=raw["meta"],
-        )
+        """None means 'no usable cache entry': absent, partial or corrupt."""
+        return load_snapshot_cache(path)
 
     @staticmethod
     def _save_cache(path: Path, snap: TrafficSnapshot) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        raw = {
-            "level": snap.level,
-            "time_bin": snap.time_bin,
-            "source": snap.source,
-            "meta": snap.meta,
-            "travel_time": {
-                f"{u}_{v}_{k}": val for (u, v, k), val in snap.travel_time.items()
-            },
-        }
-        tmp = path.with_suffix(".json.tmp")
-        with tmp.open("w", encoding="utf-8") as f:
-            json.dump(raw, f)
-        tmp.replace(path)
+        save_snapshot_cache(path, snap)
