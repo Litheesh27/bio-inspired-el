@@ -163,11 +163,14 @@ def small_od_pairs(real_graph):
     return [tuple(rng.sample(nodes, 2)) for _ in range(3)]
 
 
-# The default (no-heuristic) mode's own suggested_budget is 600 iterations
+# The default (no-heuristic) mode's own suggested_budget is 150 iterations
 # -- appropriate for the exit-criterion measurement, but too slow to use
 # on every fast contract test (these check stretch/edge-validity, not path
 # QUALITY, so a much smaller budget is enough and keeps the suite fast).
-_FAST_TEST_BUDGET = 120
+# Phase 4c lowered this 120 -> 50: n_ants doubled to 80, and with the
+# dead-node memo a valid path is found on iteration 1 on every real OD
+# pair measured, so these contract tests do not need more.
+_FAST_TEST_BUDGET = 50
 
 
 def test_aco_stretch_invariant_never_below_one(real_graph, small_od_pairs):
@@ -285,7 +288,12 @@ def _reference_construct_ant(router):
     methods instead of the inlined fast path. Deliberately a transcription
     of `_construct_ant`'s structure with `router._weighted_candidates(...)`
     / `router._pick_and_remove(...)` calls in place of the inlined bodies,
-    and with `len(path_idx)` recomputed rather than tracked in `depth`."""
+    and with `len(path_idx)` recomputed rather than tracked in `depth`.
+
+    Phase 4c: also mirrors the per-ant dead-node memo
+    (`router._use_dead_node_memo`), so the equivalence check covers both
+    memo settings."""
+    memo = router._use_dead_node_memo
     target_idx = router._target_idx
     path_idx = [router._source_idx]
     edge_path_ids = []
@@ -308,9 +316,14 @@ def _reference_construct_ant(router):
         if not candidates:
             if len(path_idx) == 1:
                 return None
-            visited[path_idx.pop()] = 0
+            if memo:
+                path_idx.pop()
+            else:
+                visited[path_idx.pop()] = 0
             edge_path_ids.pop()
             candidates = frames.pop()
+            if memo:
+                candidates = [c for c in candidates if not visited[c[1]]]
             continue
         eid, v_idx = router._pick_and_remove(candidates)
         frames.append(candidates)
@@ -343,11 +356,16 @@ def _compare_inlined_vs_reference(router, n_ants):
     return inlined
 
 
+@pytest.mark.parametrize("use_dead_node_memo", [True, False])
 @pytest.mark.parametrize("use_goal_heuristic", [True, False])
-def test_aco_hot_loop_matches_reference_helpers_toy(use_goal_heuristic):
+def test_aco_hot_loop_matches_reference_helpers_toy(use_goal_heuristic, use_dead_node_memo):
     G = _toy_graph()
     snap = _toy_snapshot(G)
-    router = ACORouter(config=_TOY_TEST_CONFIG, use_goal_heuristic=use_goal_heuristic)
+    router = ACORouter(
+        config=_TOY_TEST_CONFIG,
+        use_goal_heuristic=use_goal_heuristic,
+        use_dead_node_memo=use_dead_node_memo,
+    )
     router.prepare(G, "A", "E", snap, seed=3)
     router.step()  # get off the uniform-pheromone starting state
     results = _compare_inlined_vs_reference(router, n_ants=25)
@@ -367,13 +385,147 @@ def test_aco_hot_loop_matches_reference_helpers_real(real_graph, small_od_pairs)
 
 
 # --------------------------------------------------------------------------
+# Phase 4c: the per-ant dead-node memo. It is a LOSSY construction
+# heuristic, not an optimization (see aco.py's module docstring and
+# configs/aco.yaml). These tests pin down both halves of that claim: it is
+# on by default and it really does shrink the ants' reachable search space.
+# --------------------------------------------------------------------------
+
+
+def _grid_with_culdesacs(n: int = 4) -> nx.MultiDiGraph:
+    """A 4x4 bidirectional grid plus two-node cul-de-sac spurs -- the
+    smallest structure that reproduces what makes the real Bengaluru graph
+    hard for feed-forward ants (a spur's only way out is back to the node
+    the ant came from, i.e. a genuine dead end under a node tabu)."""
+    G = nx.MultiDiGraph()
+    for i in range(n):
+        for j in range(n):
+            G.add_node((i, j), y=0.001 * i, x=0.001 * j)
+
+    def link(a, b):
+        G.add_edge(a, b, key=0, length=100.0, speed_kph=36.0, travel_time=10.0)
+
+    for i in range(n):
+        for j in range(n):
+            for di, dj in ((0, 1), (1, 0), (0, -1), (-1, 0)):
+                a, b = i + di, j + dj
+                if 0 <= a < n and 0 <= b < n:
+                    link((i, j), (a, b))
+    for idx, anchor in enumerate([(1, 1), (2, 2), (1, 2), (2, 1), (0, 2), (3, 1)]):
+        c1, c2 = ("spur", idx, 0), ("spur", idx, 1)
+        G.add_node(c1, y=0.0005 * idx, x=0.005)
+        G.add_node(c2, y=0.0005 * idx, x=0.006)
+        link(anchor, c1)
+        link(c1, anchor)
+        link(c1, c2)
+        link(c2, c1)
+    return G
+
+
+def test_aco_dead_node_memo_is_on_by_default():
+    """The shipped default is memo ON (configs/aco.yaml). If this ever
+    flips silently, every Phase 4c number in docs/tuning/aco_sweep.md
+    stops describing the shipped code."""
+    assert DEFAULT_CONFIG["use_dead_node_memo"] is True
+    assert ACORouter().config["use_dead_node_memo"] is True
+    assert ACORouter(use_dead_node_memo=False).config["use_dead_node_memo"] is False
+
+
+def test_aco_dead_node_memo_shrinks_the_reachable_search_space():
+    """The memo's documented cost, made concrete and reproducible.
+
+    Deadness is context-dependent on an ant's visited set, so memoising it
+    prunes branches that are genuinely still open. Running the SAME ant
+    construction from the SAME seed with the memo on and off, the set of
+    source->target paths the memo-on ants can produce must be a STRICT
+    SUBSET of what the memo-off ants can produce -- the memo never opens a
+    path, it only closes them. (On the real graph roughly 66% of memo-prune
+    events refuse a node that could still have reached the target; see
+    docs/tuning/aco_sweep.md Phase 4c.)"""
+    G = _grid_with_culdesacs()
+    snap = TrafficSnapshot(
+        level="freeflow",
+        time_bin=0,
+        source="freeflow",
+        travel_time={
+            (u, v, k): d["travel_time"] for u, v, k, d in G.edges(keys=True, data=True)
+        },
+    )
+    cfg = dict(DEFAULT_CONFIG)
+    cfg.update({"n_ants": 1, "use_goal_heuristic": False, "beta_no_heuristic": 0.5})
+
+    found = {}
+    for memo in (False, True):
+        router = ACORouter(config=cfg, use_dead_node_memo=memo)
+        router.prepare(G, (0, 0), (3, 3), snap, seed=11)
+        paths = set()
+        for _ in range(4000):
+            res = router._construct_ant()
+            if res is not None:
+                paths.add(tuple(res[0]))
+        found[memo] = paths
+
+    assert found[True] < found[False], (
+        "memo-on ants should reach a strict subset of the paths memo-off ants "
+        f"reach; got {len(found[True])} vs {len(found[False])}"
+    )
+    assert not (found[True] - found[False])
+
+
+def test_aco_dead_node_memo_off_still_routes(real_graph, small_od_pairs):
+    """memo=False must remain a working, reproducible mode -- it is the
+    Phase 4/4b search and the paper's ablation baseline."""
+    snap = FreeFlowProvider(real_graph).snapshot()
+    s, t = small_od_pairs[0]
+    r = ACORouter(use_dead_node_memo=False)
+    r.prepare(real_graph, s, t, snap, seed=0)
+    assert r._use_dead_node_memo is False
+    res = run_to_convergence(r, budget=_FAST_TEST_BUDGET)
+    if res.path is not None:
+        assert res.path[0] == s and res.path[-1] == t
+        for a, b in zip(res.path, res.path[1:]):
+            assert real_graph.has_edge(a, b)
+
+
+@pytest.mark.parametrize("use_dead_node_memo", [True, False])
+def test_aco_determinism_holds_in_both_memo_modes(use_dead_node_memo):
+    G = _toy_graph()
+    snap = _toy_snapshot(G)
+    out = []
+    for _ in range(2):
+        r = ACORouter(config=_TOY_TEST_CONFIG, use_dead_node_memo=use_dead_node_memo)
+        r.prepare(G, "A", "E", snap, seed=7)
+        out.append(run_to_convergence(r, budget=60))
+    assert out[0].path == out[1].path
+    assert out[0].cost == out[1].cost
+    assert out[0].trace == out[1].trace
+
+
+# --------------------------------------------------------------------------
 # Slow: the actual exit-criterion measurement (30 OD pairs x 2 congestion
 # levels). Not run by default `pytest tests/ -v`.
 # --------------------------------------------------------------------------
 
 
-def _measure_exit_criterion(real_graph, od_pairs, snap, use_goal_heuristic, budget):
+def _measure_exit_criterion(
+    real_graph, od_pairs, snap, use_goal_heuristic, budget, use_dead_node_memo=None
+):
+    """Run ACO on every OD pair and report everything the Phase 4 exit
+    criterion is graded on: fraction at stretch<=1.10, median/worst
+    stretch, median iterations, ant completion rate and wall-clock per
+    pair. Returns a dict; `frac` is the criterion itself.
+
+    Per CLAUDE.md, `stretch < 1.0` is a bug, so it is asserted here rather
+    than merely reported."""
+    import statistics
+    import time
+
     stretches = []
+    iters = []
+    walls = []
+    ants_total = 0
+    ants_done = 0
+
     for s, t in od_pairs:
         d_router = DijkstraRouter()
         d_router.prepare(real_graph, s, t, snap, seed=0)
@@ -381,20 +533,52 @@ def _measure_exit_criterion(real_graph, od_pairs, snap, use_goal_heuristic, budg
         if d_result.cost is None:
             continue
 
-        a_router = ACORouter(use_goal_heuristic=use_goal_heuristic)
+        a_router = ACORouter(
+            use_goal_heuristic=use_goal_heuristic,
+            use_dead_node_memo=use_dead_node_memo,
+        )
         a_router.prepare(real_graph, s, t, snap, seed=0)
+        t0 = time.perf_counter()
         a_result = run_to_convergence(a_router, budget=budget)
+        walls.append(time.perf_counter() - t0)
+        iters.append(a_result.iterations)
+        ants_total += a_router._ants_total
+        ants_done += a_router._ants_completed
+
         if a_result.cost is None:
             stretches.append(float("inf"))
             continue
 
         stretch = a_result.cost / d_result.cost
-        assert stretch >= 1.0 - 1e-9
+        assert stretch >= 1.0 - 1e-9, (
+            f"stretch {stretch} < 1.0 for OD ({s},{t}) -- ACO beat Dijkstra on "
+            "the same weighted graph, which is a bug per CLAUDE.md's invariant."
+        )
         stretches.append(stretch)
 
+    finite = [x for x in stretches if x != float("inf")]
     ok = sum(1 for x in stretches if x <= 1.10)
-    frac = ok / len(stretches) if stretches else 0.0
-    return frac, ok, len(stretches)
+    return {
+        "frac": ok / len(stretches) if stretches else 0.0,
+        "ok": ok,
+        "n": len(stretches),
+        "median": statistics.median(finite) if finite else float("inf"),
+        "worst": max(stretches) if stretches else float("inf"),
+        "median_iters": statistics.median(iters) if iters else 0,
+        "completion": ants_done / ants_total if ants_total else float("nan"),
+        "wall_per_pair": statistics.fmean(walls) if walls else 0.0,
+    }
+
+
+def _report(tag, r):
+    line = (
+        f"[{tag}] {r['ok']}/{r['n']} pairs at stretch<=1.10 ({r['frac']:.0%}) | "
+        f"median {r['median']:.3f} | worst {r['worst']:.3f} | "
+        f"median iters {r['median_iters']:.0f} | ant completion {r['completion']:.0%} | "
+        f"{r['wall_per_pair']:.1f} s/pair"
+    )
+    print(line)
+    return line
 
 
 @pytest.mark.slow
@@ -402,7 +586,24 @@ def test_aco_exit_criterion_30_od_pairs_no_heuristic(real_graph, area_cfg, tmp_p
     """The headline mode (configs/aco.yaml default: use_goal_heuristic=false,
     classical MMAS eta=1/travel_time only). This IS the exit criterion this
     project reports against -- an honest miss here is a real result, not a
-    reason to weaken the assertion (see docs/tuning/aco_sweep.md)."""
+    reason to weaken the assertion (see docs/tuning/aco_sweep.md).
+
+    MEASURED IN PHASE 4C, AND IT CURRENTLY FAILS ON FREEFLOW:
+
+        freeflow    26/30 = 86.7% at stretch<=1.10  (misses the 90% bar)
+        bpr_heavy   29/30 = 96.7%                   (passes)
+
+    at `suggested_budget=150`, seed 0, median stretch 1.000 / 1.009, worst
+    1.289 / 1.171, ant completion 82% / 81%. All four freeflow failures are
+    long-hop pairs (46-83 hops) and three of them have already CONVERGED,
+    so they are settled local optima rather than unfinished searches;
+    doubling the budget to 300 changes nothing.
+
+    This assertion is deliberately left at 0.90. A failing slow test that
+    states the real number is the honest record of a missed exit criterion;
+    relaxing it, or switching the default to the goal-directed mode (which
+    measures no better -- 86.7% freeflow, 90.0% BPR heavy), would be moving
+    the goalpost. See docs/tuning/aco_sweep.md's Phase 4c section."""
     rng = random.Random(2024)
     nodes = sorted(real_graph.nodes())
     od_pairs = [tuple(rng.sample(nodes, 2)) for _ in range(30)]
@@ -415,13 +616,22 @@ def test_aco_exit_criterion_30_od_pairs_no_heuristic(real_graph, area_cfg, tmp_p
         "bpr_heavy": bpr.snapshot("heavy", time_bin=1),
     }
     budget = load_aco_config_helper()["suggested_budget"]
+    results = {}
 
     for level, snap in snapshots.items():
-        frac, ok, n = _measure_exit_criterion(
+        r = _measure_exit_criterion(
             real_graph, od_pairs, snap, use_goal_heuristic=False, budget=budget
         )
-        print(f"[no-heuristic/{level}] {ok}/{n} pairs at stretch<=1.10 ({frac:.0%})")
-        assert frac >= 0.90, f"{level}: only {frac:.0%} of pairs met stretch<=1.10"
+        _report(f"no-heuristic/{level}", r)
+        results[level] = r
+
+    for level, r in results.items():
+        assert r["frac"] >= 0.90, (
+            f"{level}: only {r['frac']:.0%} of pairs met stretch<=1.10 "
+            f"(median {r['median']:.3f}, worst {r['worst']:.3f}). This is the "
+            "measured result -- see docs/tuning/aco_sweep.md Phase 4c. Do NOT "
+            "weaken this assertion to make it pass."
+        )
 
 
 @pytest.mark.slow
@@ -446,11 +656,11 @@ def test_aco_exit_criterion_30_od_pairs_goal_heuristic_ablation(real_graph, area
     budget = load_aco_config_helper()["suggested_budget_goal_heuristic"]
 
     for level, snap in snapshots.items():
-        frac, ok, n = _measure_exit_criterion(
+        r = _measure_exit_criterion(
             real_graph, od_pairs, snap, use_goal_heuristic=True, budget=budget
         )
-        print(f"[goal-heuristic/{level}] {ok}/{n} pairs at stretch<=1.10 ({frac:.0%})")
-        assert frac > 0.0, f"{level}: goal-heuristic ablation found 0 valid results"
+        _report(f"goal-heuristic/{level}", r)
+        assert r["frac"] > 0.0, f"{level}: goal-heuristic ablation found 0 valid results"
 
 
 def load_aco_config_helper():

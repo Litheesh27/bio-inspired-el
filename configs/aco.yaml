@@ -22,19 +22,26 @@ use_goal_heuristic: false
 # `beta`: used whenever use_goal_heuristic=True (the ablation mode) --
 # 4.0 is what worked well in goal-heuristic testing. `beta_no_heuristic`:
 # used instead whenever use_goal_heuristic=False (the current default,
-# headline mode) -- 1.0 is what the sweep found best for the no-heuristic
-# mode (a high beta over-commits to locally-fast-but-directionless edges
-# without a target-location signal to correct it). See
+# headline mode) -- Phase 4c re-tuned this from 1.0 to 0.5 with the dead-node
+# memo on (a high beta over-commits to locally-fast-but-directionless
+# edges without a target-location signal to correct it; beta >= 2 is
+# clearly worse, and anything in [0, 0.75] is within noise of 0.5). See
 # ACORouter.prepare(): beta_no_heuristic overrides beta only when
 # use_goal_heuristic is False AND beta_no_heuristic is not null.
 beta: 4.0
-beta_no_heuristic: 1.0
+beta_no_heuristic: 0.5
 
 # Evaporation rate applied to every edge's pheromone each iteration.
 rho: 0.1
 
-# Number of ants constructing a solution per iteration.
-n_ants: 40
+# Number of ants constructing a solution per iteration. Phase 4c re-tune:
+# 40 -> 80. This is the ONE parameter that moved the exit criterion once
+# the dead-node memo was on (see docs/tuning/aco_sweep.md Phase 4c): with
+# ~78% of ants now completing, a bigger colony means proportionally more
+# usable candidate paths per iteration, whereas pre-memo (26% completion)
+# extra ants mostly bought extra wasted constructions -- which is why the
+# pre-memo sweep concluded "more ants alone did not help".
+n_ants: 80
 
 # Deposit amount on the iteration-best path: delta_tau = Q / L_best.
 Q: 1.0
@@ -59,6 +66,30 @@ max_steps_multiplier: 3
 # exhausts this budget, or backtracks all the way to the source with
 # nothing left to try, is discarded -- not repaired.
 backtrack_multiplier: 25
+
+# PER-ANT DEAD-NODE MEMO (Phase 4c). When true, a node the ant backtracks
+# out of KEEPS its visited mark, so that ant never re-enters it from any
+# other parent for the rest of its construction.
+#
+# This is NOT a neutral optimization -- it is a deliberate, LOSSY
+# construction heuristic, and must be described as one in the paper.
+# Whether a node is "dead" is context-dependent on the ant's visited set:
+# a node with no continuation given one prefix can be perfectly viable
+# given another, and may even be the only route to the target from some
+# other branch. Memoising deadness across the whole construction therefore
+# prunes branches that are genuinely still open, and an ant's reachable
+# search space becomes a strict subset of the true one. (Two extra sources
+# of false deadness: a node abandoned only because the ant hit its FORWARD
+# step budget is still marked dead, and a resumed backtrack frame is
+# re-filtered against the memo as it stood later.) That loss of
+# completeness is very likely why it helps so much -- it buys tractability
+# with completeness.
+#
+# Measured effect (docs/tuning/aco_sweep.md, Phase 4c): ant completion
+# rate roughly triples and stretch improves on every pair sampled, at the
+# cost above. false restores the exact Phase 4/4b search, bit-for-bit, so
+# the ablation stays reproducible.
+use_dead_node_memo: true
 
 # Convergence: iteration-best path unchanged for k_stall consecutive
 # iterations (iterations with no valid ant reset the stall counter to 0,
@@ -85,13 +116,18 @@ disruption_n_hop: 2
 
 # Suggested iteration budget for run_to_convergence() -- not read by
 # ACORouter itself (the caller owns the budget), recorded here so scripts
-# and the exit-criterion measurement agree on one number. 600 is the
-# no-heuristic (headline) mode's budget: the sweep found this mode needs
-# a materially larger budget than the goal-heuristic mode (~90 iters) to
-# have a chance at stretch<=1.10 on longer OD pairs -- this is the honest
-# cost of not having target-location information, not a tuning artifact.
-suggested_budget: 600
-# Budget used for the goal-heuristic ablation measurement (much smaller;
-# recorded here for the reproducibility record, read by the ablation
-# script/test rather than by ACORouter itself).
+# and the exit-criterion measurement agree on one number.
+#
+# Phase 4c: 600 -> 150. The 600 was sized for the pre-memo search, which
+# failed ~74% of its ants and kept creeping for hundreds of iterations.
+# With the dead-node memo on and n_ants=80 the fraction of OD pairs at
+# stretch<=1.10 is flat from ~b=150 (measured at b=50/100/150/200/300 from
+# recorded per-pair stretch traces -- see docs/tuning/aco_sweep.md Phase
+# 4c), and median iterations-to-plateau is ~102. The extra 450 iterations
+# bought nothing; this is the single biggest reduction in Phase 8's ACO
+# cost.
+suggested_budget: 150
+# Budget used for the goal-heuristic ablation measurement (recorded here
+# for the reproducibility record, read by the ablation script/test rather
+# than by ACORouter itself).
 suggested_budget_goal_heuristic: 250

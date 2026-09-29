@@ -51,6 +51,10 @@ before that.
 
 Robustness:
   - Per-ant tabu set (visited nodes) -- an ant can never revisit a node.
+    With `use_dead_node_memo` (default true, Phase 4c) the tabu mark is
+    also NOT cleared when the ant backtracks out of a node, which makes it
+    a dead-node memo as well; see the Phase 4c section below for what that
+    approximation costs.
   - max_steps = max_steps_multiplier * an estimated graph diameter (hops),
     computed once per `prepare` via a double-sweep BFS from the source
     (never hardcoded).
@@ -126,11 +130,54 @@ reproduces the Phase 4 implementation EXACTLY: same paths, same costs,
 same iteration counts, same ant completion rates, same operations per ant,
 at every seed tested. (That is stronger than the Phase 4b spec required --
 it permitted an RNG-stream change and therefore only statistical
-equivalence -- and it is what makes the tuning record and the
-stretch-1.157 plateau finding in docs/tuning/aco_sweep.md still apply
-verbatim to this code.) Measured speedups, the operations-per-ant
+equivalence -- and it is what let the Phase 4 tuning record carry
+over unchanged at the time.) NOTE: Phase 4c has since changed the search
+(the dead-node memo below) and re-tuned on top of it, so the pre-memo
+tuning record and the stretch-1.157 plateau finding in
+docs/tuning/aco_sweep.md are now HISTORICAL; the bit-for-bit equivalence
+claim here applies to `use_dead_node_memo: false`.) Measured speedups, the operations-per-ant
 accounting, and the honest note about what was NOT achieved are in that
 file's "Phase 4b performance" section.
+
+------------------------------------------------------------------------
+Phase 4c: the per-ant dead-node memo -- a DELIBERATE, LOSSY heuristic
+------------------------------------------------------------------------
+`use_dead_node_memo` (configs/aco.yaml, default **true**) changes what an
+ant does when it backtracks: the node it abandons stays marked in the
+ant's `visited` bytearray instead of being cleared, so that ant can never
+re-enter that node from any other parent for the rest of its construction.
+`visited` therefore does double duty -- path tabu for nodes currently on
+the path, dead-node memo for nodes popped off it.
+
+WHY IT EXISTS. Without it, backtracking thrashes: on a sampled 67-hop OD
+pair one ant made 2,793 forward moves but entered only 320 distinct nodes,
+re-entering the worst node ~129 times, because "this node is dead" was
+recomputed from scratch every time the ant wandered back into the same
+subtree from a different parent. Purely-local ACO completed only ~26% of
+its ants; most burned the full op budget and returned nothing.
+
+WHAT IT COSTS -- READ THIS BEFORE QUOTING ANY NUMBER FROM THIS MODE.
+Deadness is **context-dependent on the visited set**. A node with no
+viable continuation given one prefix may be perfectly viable given a
+different prefix, and it can even be the only way to the target from some
+other branch. Memoising deadness across an ant's whole construction
+therefore prunes branches that are genuinely still open, and the ant's
+reachable search space is a strict subset of the true one. Two further
+sources of false deadness: a node abandoned because the ant hit its
+FORWARD step budget (`depth >= max_steps`) is marked dead although nothing
+about it was dead, and a frame resumed after a backtrack is re-filtered
+against the memo, so alternatives recorded before the memo grew are
+dropped.
+
+That loss of completeness is very likely *why* the memo helps so much: it
+trades search completeness for tractability. It must be presented in the
+paper as a construction heuristic of this ACO variant -- on the same
+footing as the backtracking construction itself -- and NOT as an
+implementation detail or a neutral speed optimization. `use_dead_node_memo:
+false` restores the exact Phase 4/4b search (bit-for-bit) so the ablation
+is reproducible; docs/tuning/aco_sweep.md's Phase 4c section carries the
+memo-on/memo-off measurement and a direct estimate of how often the memo
+prunes a branch that was in fact still viable.
 """
 
 from __future__ import annotations
@@ -163,20 +210,25 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # Optional separate beta for the no-heuristic mode (tuning needs may
     # differ since eta's scale/shape differs); falls back to `beta` above
     # if not set.
-    "beta_no_heuristic": 1.0,  # used when use_goal_heuristic=False (default)
+    "beta_no_heuristic": 0.5,  # used when use_goal_heuristic=False (default)
     "rho": 0.1,
-    "n_ants": 40,
+    "n_ants": 80,
     "Q": 1.0,
     "tau_max_init": 1.0,
     "tau_min_ratio": 20.0,
     "max_steps_multiplier": 3,
     "backtrack_multiplier": 25,
+    # Per-ant dead-node memo (Phase 4c). See the module docstring's
+    # "Phase 4c" section: this is a deliberate CONSTRUCTION HEURISTIC that
+    # trades completeness for tractability, not a neutral optimization.
+    # False reproduces the Phase 4/4b search exactly.
+    "use_dead_node_memo": True,
     "k_stall": 60,
     "lambda_branching": 0.05,
     "branching_factor_threshold": 1.02,
     "disruption_strategy": "zero",
     "disruption_n_hop": 2,
-    "suggested_budget": 600,  # headline (no-heuristic) mode
+    "suggested_budget": 150,  # headline (no-heuristic) mode, Phase 4c
     "suggested_budget_goal_heuristic": 250,
 }
 
@@ -245,6 +297,7 @@ class ACORouter(Router):
         config_path: str = "configs/aco.yaml",
         disruption_strategy: str | None = None,
         use_goal_heuristic: bool | None = None,
+        use_dead_node_memo: bool | None = None,
     ) -> None:
         """
         Args:
@@ -260,6 +313,10 @@ class ACORouter(Router):
                 `use_goal_heuristic` for this instance -- lets tests/tuning
                 compare the goal-directed and plain-MMAS heuristic modes
                 without editing the config file.
+            use_dead_node_memo: overrides the config's
+                `use_dead_node_memo` for this instance -- lets the
+                memo-on/memo-off ablation be measured without editing the
+                config file. False restores the exact Phase 4/4b search.
         """
         if config is not None:
             merged = dict(DEFAULT_CONFIG)
@@ -271,6 +328,8 @@ class ACORouter(Router):
             self.config["disruption_strategy"] = disruption_strategy
         if use_goal_heuristic is not None:
             self.config["use_goal_heuristic"] = use_goal_heuristic
+        if use_dead_node_memo is not None:
+            self.config["use_dead_node_memo"] = use_dead_node_memo
         if self.config["disruption_strategy"] not in ("zero", "local_reset"):
             raise ValueError(
                 f"Unknown disruption_strategy: {self.config['disruption_strategy']!r}"
@@ -310,6 +369,7 @@ class ACORouter(Router):
         self._lambda_branching = float(self.config["lambda_branching"])
         self._branching_threshold = float(self.config["branching_factor_threshold"])
         self._disruption_n_hop = int(self.config["disruption_n_hop"])
+        self._use_dead_node_memo = bool(self.config["use_dead_node_memo"])
 
         diameter = _estimate_diameter_hops(G, source)
         self._max_steps = max(4, int(self.config["max_steps_multiplier"]) * diameter)
@@ -601,6 +661,12 @@ class ACORouter(Router):
         indexing, no dict/tuple hashing); only the returned path/edge_path
         are converted back to node ids / (u,v,k) edge keys.
 
+        When `use_dead_node_memo` is true (Phase 4c default), a node the
+        ant backtracks out of keeps its `visited` mark and is never
+        re-entered by that ant, and resumed frames are re-filtered against
+        the grown memo. This is a lossy construction heuristic, not an
+        optimization -- see the module docstring's Phase 4c section.
+
         `_weighted_candidates` and `_pick_and_remove` are INLINED below
         rather than called. This loop runs ~200,000 times per iteration
         (~110,000 of those doing a full candidate build + weighted pick),
@@ -627,6 +693,7 @@ class ACORouter(Router):
         cand_base = self._cand_base
         rand = self._rng.random
         randrange = self._rng.randrange
+        memo = self._use_dead_node_memo
 
         candidates = [c for c in cand_base[source_idx] if not visited[c[1]]]
 
@@ -648,11 +715,33 @@ class ACORouter(Router):
                     self._ops_total += ops
                     self._ants_total += 1
                     return None  # exhausted every branch back to the source
-                visited[path_idx.pop()] = 0
+                # Backtracking out of `path_idx[-1]`: it had no viable
+                # continuation under the visited set in force right now.
+                if memo:
+                    # Dead-node memo (Phase 4c): leave `visited` SET on the
+                    # node we are abandoning, so this ant can never re-enter
+                    # it from any other parent for the rest of its
+                    # construction. `visited` therefore does double duty --
+                    # path tabu for nodes still on the path, dead-node memo
+                    # for nodes popped off it. This is the approximation
+                    # documented in the module docstring: deadness is
+                    # context-dependent on the visited set, so a node that
+                    # was dead from here may have been viable from
+                    # elsewhere, and the memo prunes those branches too.
+                    path_idx.pop()
+                else:
+                    visited[path_idx.pop()] = 0
                 edge_path_ids.pop()
                 depth -= 1
                 last_idx = path_idx[-1]
                 candidates = frames.pop()
+                if memo:
+                    # The resumed frame was filtered against the visited
+                    # set as it stood when the frame was pushed; nodes
+                    # marked dead since then must be dropped before the
+                    # weighted pick, or they would both be selectable and
+                    # contribute weight.
+                    candidates = [c for c in candidates if not visited[c[1]]]
                 continue
 
             # -- inlined _pick_and_remove ------------------------------

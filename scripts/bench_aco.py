@@ -3,6 +3,12 @@ per ant) for ACORouter on the real Central Bengaluru graph, plus the
 projected Phase 8 ACO wall-clock cost those numbers imply.
 
 Run: .venv/Scripts/python.exe scripts/bench_aco.py [--pairs N] [--iters N]
+                                                  [--memo-ab]
+
+`--memo-ab` additionally runs the Phase 4c dead-node memo on/off A/B with
+the two variants' iterations ROUND-ROBINED inside this one process --
+which is the only way a before/after is meaningful on this machine (see
+the throughput caveat below and in docs/tuning/aco_sweep.md).
 
 Prints, per OD pair and in aggregate:
   - seconds/iteration (mean over N timed iterations, after a couple of
@@ -72,8 +78,8 @@ def _od_pairs(G, n_pairs: int):
     return [tuple(rng.sample(nodes, 2)) for _ in range(n_pairs)]
 
 
-def bench_pair(G, snap, s, t, seed=0, n_iters=10, n_warmup=2) -> dict:
-    router = ACORouter(config_path=str(ACO_CONFIG_PATH))
+def bench_pair(G, snap, s, t, seed=0, n_iters=10, n_warmup=2, memo=None) -> dict:
+    router = ACORouter(config_path=str(ACO_CONFIG_PATH), use_dead_node_memo=memo)
     router.prepare(G, s, t, snap, seed=seed)
 
     for _ in range(n_warmup):
@@ -105,13 +111,60 @@ def bench_pair(G, snap, s, t, seed=0, n_iters=10, n_warmup=2) -> dict:
         "ops_per_ant": ops / ants if ants else float("nan"),
         "completion_rate": done / ants if ants else float("nan"),
         "op_budget": router._max_steps * router._backtrack_multiplier,
+        "memo": router._use_dead_node_memo,
     }
+
+
+def bench_pair_memo_ab(G, snap, s, t, seed=0, n_iters=10, n_warmup=2) -> dict:
+    """Phase 4c: memo ON vs memo OFF, INTERLEAVED IN ONE PROCESS.
+
+    This machine's throughput swings by up to 3.4x with thermal state, so
+    two numbers taken from two separate runs are not comparable (see
+    docs/tuning/aco_sweep.md's "Measurement conditions"). Here both
+    variants are prepared up front on the same OD pair with the same seed
+    and their timed iterations are round-robined, so any throttling that
+    occurs hits both equally.
+    """
+    routers = {}
+    for memo in (True, False):
+        r = ACORouter(config_path=str(ACO_CONFIG_PATH), use_dead_node_memo=memo)
+        r.prepare(G, s, t, snap, seed=seed)
+        for _ in range(n_warmup):
+            r.step()
+        routers[memo] = r
+
+    times = {True: [], False: []}
+    base = {m: (r._ops_total, r._ants_total, r._ants_completed)
+            for m, r in routers.items()}
+    for _ in range(n_iters):
+        for memo in (True, False):  # round-robin, one iteration each
+            r = routers[memo]
+            start = time.perf_counter()
+            r.step()
+            times[memo].append(time.perf_counter() - start)
+
+    out = {"od": (s, t)}
+    for memo, r in routers.items():
+        ops = r._ops_total - base[memo][0]
+        ants = r._ants_total - base[memo][1]
+        done = r._ants_completed - base[memo][2]
+        out[memo] = {
+            "sec_per_iter": statistics.median(times[memo]),
+            "ops_per_ant": ops / ants if ants else float("nan"),
+            "completion_rate": done / ants if ants else float("nan"),
+        }
+    return out
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pairs", type=int, default=5, help="number of OD pairs to benchmark")
     ap.add_argument("--iters", type=int, default=10, help="timed iterations per pair")
+    ap.add_argument(
+        "--memo-ab",
+        action="store_true",
+        help="also run the Phase 4c memo on/off A/B, interleaved in this process",
+    )
     args = ap.parse_args()
 
     area_cfg = load_area_config(AREA_CONFIG_PATH)
@@ -127,6 +180,8 @@ def main() -> None:
     print(
         f"config: n_ants={aco_cfg['n_ants']}, "
         f"use_goal_heuristic={aco_cfg['use_goal_heuristic']}, "
+        f"use_dead_node_memo={aco_cfg['use_dead_node_memo']}, "
+        f"beta_no_heuristic={aco_cfg['beta_no_heuristic']}, rho={aco_cfg['rho']}, "
         f"backtrack_multiplier={aco_cfg['backtrack_multiplier']}"
     )
     print()
@@ -177,6 +232,35 @@ def main() -> None:
         f"Projected Phase 8 ACO sweep, assuming {N_PARALLEL_CORES_SPEEDUP}x "
         f"parallel (joblib, 14 cores): {parallel_hours:.1f} hours"
     )
+
+    if args.memo_ab:
+        print()
+        print("Phase 4c memo A/B (interleaved in this process -- the only")
+        print("comparison this machine's thermal behaviour makes meaningful):")
+        agg = {True: {"s": [], "o": [], "c": []}, False: {"s": [], "o": [], "c": []}}
+        for s_, t_ in _od_pairs(G, args.pairs):
+            ab = bench_pair_memo_ab(G, snap, s_, t_, n_iters=args.iters)
+            for memo in (True, False):
+                agg[memo]["s"].append(ab[memo]["sec_per_iter"])
+                agg[memo]["o"].append(ab[memo]["ops_per_ant"])
+                agg[memo]["c"].append(ab[memo]["completion_rate"])
+            print(
+                f"  OD ({s_}, {t_}): "
+                f"memo ON {ab[True]['sec_per_iter']:.4f} s/it, "
+                f"{ab[True]['ops_per_ant']:.0f} ops/ant, "
+                f"{ab[True]['completion_rate']:.0%} complete | "
+                f"memo OFF {ab[False]['sec_per_iter']:.4f} s/it, "
+                f"{ab[False]['ops_per_ant']:.0f} ops/ant, "
+                f"{ab[False]['completion_rate']:.0%} complete"
+            )
+        for memo in (True, False):
+            a = agg[memo]
+            print(
+                f"  memo {'ON ' if memo else 'OFF'} mean: "
+                f"{statistics.fmean(a['s']):.4f} s/iteration, "
+                f"{statistics.fmean(a['o']):.0f} ops/ant, "
+                f"{statistics.fmean(a['c']):.0%} ant completion"
+            )
 
 
 if __name__ == "__main__":
