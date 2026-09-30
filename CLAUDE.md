@@ -69,17 +69,22 @@ that file has the detail.
       thermal state. Only ever compare variants interleaved within ONE process.
       An earlier "588 h" figure in this file was extrapolated from a regressed
       intermediate build measured across separate runs; it was wrong.
-- [ ] Phase 4c — Adopt the per-ant dead-node memo, then re-tune and re-measure.
-      Purely-local ACO currently completes on only ~26% of ants (0-12% on 4 of
-      5 sampled OD pairs, every ant burning its full 5,175-op budget); ants
-      re-enter dead subtrees hard (2,793 forward moves, only 320 distinct
-      nodes, worst node re-entered ~129x). A per-ant memo of proven-dead nodes
-      measured completion 6->55%, 0->45%, 12->86% and stretch 1.796->1.102,
-      5.10->1.44, 1.944->1.442. It CHANGES search behaviour, so adopting it
-      invalidates the existing tuning sweep and the stretch-1.157 plateau
-      finding — both must be re-run. Caveat to document: deadness is
-      context-dependent on the visited set, so the memo is an approximation
-      that can prune genuinely viable paths.
+- [x] Phase 4c — Dead-node memo adopted, re-tuned, criterion first measured.
+      Memo raises ant completion 36% -> 80% at matched settings and roughly
+      halves construction work; quality gain is modest and tail-concentrated.
+      Its cost is measured, not assumed: **~66% of memo prunes refuse a node
+      that was still viable** given the ant's true tabu (585,445 prune events,
+      12,031 audited by BFS), and a deterministic grid test pins memo-on paths
+      as a strict SUBSET of memo-off. Documented as a deliberate lossy
+      construction heuristic, not an optimization — deadness is context-
+      dependent on the visited set. Implemented by not clearing the `visited`
+      mark on backtrack, so `visited` does double duty at zero extra cost.
+      Re-tune: beta_no_heuristic 1.0 -> 0.5, n_ants 40 -> 80, budget 600 -> 150.
+      n_ants only helped POST-memo (at 26% completion extra ants bought extra
+      waste, which is why the pre-memo sweep concluded more ants did not help).
+      Phase 8 ACO projection 47 h -> 18.5 h serial, ~1.9 h at 10x parallel.
+      Its 86.7%/96.7% criterion figures were in-sample and single-seed;
+      **superseded by Phase 4d** — do not cite them.
 - [x] Phase 4d — Cache race fixed; exit criterion re-measured cleanly.
       VERDICT: **Phase 4's exit criterion is MISSED.** 30 held-out pairs
       (draw seed 4242, zero overlap with tuning or Phase 4c pairs) x 5 seeds
