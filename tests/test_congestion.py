@@ -539,3 +539,94 @@ def test_prewarm_snapshots_materialises_every_cache_file(tmp_path, area_cfg):
         assert cached is not None, f"pre-warmed file for {level}/{time_bin} does not load back"
         assert cached.travel_time == snap.travel_time
         assert provider2.snapshot(level, time_bin).travel_time == snap.travel_time
+
+
+# ==========================================================================
+# PHASE 2D: snapshots record which free-flow baseline produced them
+# ==========================================================================
+#
+# The failure these close. Both baseline graphs (config_speeds and
+# sumo_speeds) describe the SAME study area and therefore share an
+# area-config hash, while carrying different `travel_time` on every edge.
+# BPR's t0 IS that attribute and SUMO falls back to it on unmatched edges,
+# so a snapshot is a function of the baseline -- but the cache key was not.
+# Without the baseline folded into the key, switching baselines would read
+# back the other baseline's numbers from disk and report them as the new
+# one's, which is the worst class of bug this project can have: silently
+# wrong, fully reproducible.
+
+from bioroute.network.graph import (  # noqa: E402
+    BASELINE_CONFIG_SPEEDS,
+    BASELINE_SUMO_SPEEDS,
+)
+
+
+def _stamped(G: nx.MultiDiGraph, baseline: str, baseline_hash: str) -> nx.MultiDiGraph:
+    """A copy of G stamped as if it came from `load_baseline_graph`."""
+    G2 = G.copy()
+    G2.graph["baseline"] = baseline
+    G2.graph["baseline_hash"] = baseline_hash
+    return G2
+
+
+def test_freeflow_snapshot_meta_records_baseline():
+    G = _int_node_toy_graph()
+    unstamped = FreeFlowProvider(G).snapshot()
+    assert unstamped.meta["baseline"] == BASELINE_CONFIG_SPEEDS
+    assert unstamped.meta["baseline_hash"] == ""
+
+    G2 = _stamped(G, BASELINE_SUMO_SPEEDS, "cafebabe0001")
+    stamped = FreeFlowProvider(G2).snapshot()
+    assert stamped.meta["baseline"] == BASELINE_SUMO_SPEEDS
+    assert stamped.meta["baseline_hash"] == "cafebabe0001"
+
+
+def test_bpr_snapshot_meta_records_baseline(tmp_path, area_cfg):
+    cfg_path = _toy_congestion_config(tmp_path)
+    G = _stamped(_int_node_toy_graph(), BASELINE_SUMO_SPEEDS, "cafebabe0001")
+    provider = BPRProvider(G, area_cfg, cfg_path, cache_dir=tmp_path / "c")
+    snap = provider.snapshot("heavy", time_bin=1)
+    assert snap.meta["baseline"] == BASELINE_SUMO_SPEEDS
+    assert snap.meta["baseline_hash"] == "cafebabe0001"
+
+
+def test_bpr_cache_key_differs_across_baselines(tmp_path, area_cfg):
+    """Different baseline -> different cache file. Same baseline -> same
+    file (otherwise the cache would never hit)."""
+    cfg_path = _toy_congestion_config(tmp_path)
+    G_cfg = _stamped(_int_node_toy_graph(), BASELINE_CONFIG_SPEEDS, "")
+    G_sumo = _stamped(_int_node_toy_graph(), BASELINE_SUMO_SPEEDS, "cafebabe0001")
+    cache = tmp_path / "shared_cache"
+
+    p_cfg = BPRProvider(G_cfg, area_cfg, cfg_path, cache_dir=cache)
+    p_sumo = BPRProvider(G_sumo, area_cfg, cfg_path, cache_dir=cache)
+    p_sumo_again = BPRProvider(
+        _stamped(_int_node_toy_graph(), BASELINE_SUMO_SPEEDS, "cafebabe0001"),
+        area_cfg, cfg_path, cache_dir=cache,
+    )
+
+    assert p_cfg._cache_path("heavy", 1) != p_sumo._cache_path("heavy", 1)
+    assert p_sumo._cache_path("heavy", 1) == p_sumo_again._cache_path("heavy", 1)
+
+
+def test_bpr_does_not_reuse_other_baselines_cached_snapshot(tmp_path, area_cfg):
+    """The real regression: compute and cache a snapshot on one baseline
+    graph, then ask for the same (level, time_bin) on a DIFFERENT baseline
+    whose free-flow times are doubled, sharing one cache dir. The second
+    answer must be recomputed, not the first one read back."""
+    cfg_path = _toy_congestion_config(tmp_path)
+    cache = tmp_path / "shared_cache"
+
+    G_cfg = _stamped(_int_node_toy_graph(), BASELINE_CONFIG_SPEEDS, "")
+    G_sumo = _stamped(_int_node_toy_graph(), BASELINE_SUMO_SPEEDS, "cafebabe0001")
+    for _, _, data in G_sumo.edges(data=True):
+        data["travel_time"] = float(data["travel_time"]) * 2.0
+
+    snap_cfg = BPRProvider(G_cfg, area_cfg, cfg_path, cache_dir=cache).snapshot("heavy", 1)
+    snap_sumo = BPRProvider(G_sumo, area_cfg, cfg_path, cache_dir=cache).snapshot("heavy", 1)
+
+    assert snap_cfg.travel_time != snap_sumo.travel_time
+    assert snap_sumo.meta["baseline"] == BASELINE_SUMO_SPEEDS
+    # Doubling every free-flow time must show up in the congested times.
+    for edge, value in snap_cfg.travel_time.items():
+        assert snap_sumo.travel_time[edge] > value

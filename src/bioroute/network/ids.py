@@ -50,12 +50,38 @@ not which of the graph's two directed edges (u, v, k) / (v, u, k') is
 
 Travel time aggregation
 ------------------------
-A graph edge's congested travel time is the **length-weighted mean** of
-its matched SUMO edges' ``traveltime`` (from congestion/sumo.py's parsed
-edgedata), weighted by each SUMO edge's own geometric length. Graph edges
-with no matched SUMO edge fall back to the graph's own free-flow
-``travel_time`` and are counted in the coverage report -- never silently
-dropped and never counted as "matched".
+A graph edge's congested travel time is its own length times the
+**length-weighted mean PACE** (seconds per metre) of its matched SUMO
+edges. Graph edges with no matched SUMO edge fall back to the graph's own
+free-flow ``travel_time`` and are counted in the coverage report -- never
+silently dropped and never counted as "matched".
+
+PHASE 2D CORRECTION -- this used to be the length-weighted mean of the
+matched segments' ``traveltime`` values, which is dimensionally wrong.
+That quantity is "how long it takes to cross ONE of my matched segments",
+not "how long it takes to cross this graph edge". netconvert splits a way
+at every interior shape node, and OSMnx's ``simplify=True`` merges
+consecutive ways, so a single graph edge routinely matches many short SUMO
+segments: measured on this network, the ratio of total matched SUMO length
+to graph-edge length has median 1.44 and 90th percentile 8.9. Wherever
+that ratio exceeded 1, the old rule UNDERSTATED the edge's travel time by
+roughly that factor.
+
+The damage was measurable and severe. Under the old rule, 1,794 of 7,015
+graph edges (26%) came out with SUMO travel times implying speeds above
+the FASTEST speed limit anywhere in the network -- the worst by a factor
+of 266. That silently broke A*'s optimality guarantee, whose heuristic is
+great-circle distance over the global maximum edge speed and is only
+admissible if no edge is traversed faster than that.
+
+Working in PACE fixes it, because pace is scale-free: averaging
+seconds-per-metre over the matched road and then multiplying by the GRAPH
+edge's length gives a time for the graph edge's actual distance, however
+many segments happened to match it. It is also the exact analogue of the
+free-flow rule in ``network/graph.py::annotate_speeds_from_sumo`` (total
+length over total time), so a congestion ratio on an edge is now a clean
+ratio of two speeds derived by the same rule -- which is the whole point
+of Phase 2d's shared baseline.
 
 Geometric fallback
 -------------------
@@ -94,6 +120,14 @@ class ParsedSumoEdge:
     from_node: str
     to_node: str
     length_m: float
+    # PHASE 2D: netconvert's free-flow speed limit for this edge, m/s.
+    # Carried here (rather than re-opened from the net object at every call
+    # site) because Phase 2d's shared-baseline step re-annotates the graph's
+    # `speed_kph`/`travel_time` from exactly these numbers -- see
+    # network/graph.py's `annotate_speeds_from_sumo`. Defaults to 0.0 so
+    # records constructed positionally by older code still build; a
+    # non-positive speed is treated as "no usable SUMO speed" downstream.
+    speed_mps: float = 0.0
 
 
 def parse_sumo_edge_id(sumo_id: str) -> tuple[int, int] | None:
@@ -138,6 +172,7 @@ def load_sumo_edges(net_path: str, sumolib_module=None) -> list[ParsedSumoEdge]:
                 from_node=e.getFromNode().getID(),
                 to_node=e.getToNode().getID(),
                 length_m=float(e.getLength()),
+                speed_mps=float(e.getSpeed()),
             )
         )
     return parsed
@@ -387,27 +422,41 @@ def compute_edge_travel_times(
     sumo_traveltime: dict[str, float],
     sumo_length: dict[str, float],
 ) -> tuple[dict[EdgeKey, float], int]:
-    """Length-weighted mean SUMO traveltime per graph edge; free-flow
+    """Graph-edge congested travel time = the graph edge's own length times
+    the length-weighted mean PACE (s/m) of its matched SUMO edges; free-flow
     fallback (and count) for edges with no matched SUMO edge (or whose
     matched SUMO edges all lack a traveltime observation, e.g. zero traffic
     all simulation long).
+
+    See the module docstring's "Travel time aggregation" section for why
+    this works in pace rather than averaging the matched segments' travel
+    times directly -- the short version is that a graph edge matches an
+    arbitrary amount of SUMO road (median 1.44x its own length here, p90
+    8.9x), so a mean of segment TIMES answers the wrong question and
+    understated 26% of this network's edges into implying speeds above the
+    fastest limit in the network.
 
     Returns (travel_time_map, n_fallback).
     """
     travel_time: dict[EdgeKey, float] = {}
     n_fallback = 0
     for e, sumo_ids in match.edge_to_sumo.items():
-        weighted_sum = 0.0
-        weight_total = 0.0
+        # sum(tt_i) / sum(L_i) is the length-weighted mean of the per-segment
+        # paces tt_i / L_i -- the same weighting as before, applied to the
+        # quantity that actually composes across a chain of segments.
+        total_time = 0.0
+        total_length = 0.0
         for sid in sumo_ids:
             tt = sumo_traveltime.get(sid)
             if tt is None:
                 continue
-            length = sumo_length.get(sid, 1.0)
-            weighted_sum += tt * length
-            weight_total += length
-        if weight_total > 0:
-            travel_time[e] = weighted_sum / weight_total
+            length = sumo_length.get(sid)
+            if length is None or length <= 0:
+                continue
+            total_time += tt
+            total_length += length
+        if total_length > 0 and total_time > 0:
+            travel_time[e] = float(G.edges[e]["length"]) * total_time / total_length
         else:
             travel_time[e] = float(G.edges[e]["travel_time"])
             n_fallback += 1

@@ -35,7 +35,56 @@ that file has the detail.
       SUMO 1.27.1 is installed at C:\Sumo. Achieved 97.53% ID-based edge-match
       coverage (no geometric fallback needed). See `SUMOProvider` in
       `congestion/sumo.py` and the join logic in `network/ids.py`.
-- [x] Phase 3 — Classical baseline: `Router` ABC, Dijkstra, A* (cost equality vs. Dijkstra on 100 OD pairs)
+- [x] Phase 2d — SUMO recalibration + ONE shared free-flow baseline, and a
+      dimensional bug fix that had been silently corrupting every SUMO number.
+      **THE BUG (most important thing in this entry):** `network/ids.py`'s
+      `compute_edge_travel_times` averaged the matched SUMO segments' TRAVEL
+      TIMES, which answers "how long to cross one matched segment", not "how
+      long to cross this graph edge". netconvert splits ways while OSMnx merges
+      them, so matched-SUMO-length / graph-edge-length has median 1.44 and p90
+      8.9 here — the old rule understated most edges in proportion to how
+      finely they were split, hitting busy arterials hardest. Result: **1,794
+      of 7,015 edges (26%) implied speeds above the fastest limit anywhere in
+      the network, the worst by 266x**, which silently broke A*'s admissibility.
+      The A*-vs-Dijkstra test had been passing by luck of the sampled pairs.
+      Fixed by working in PACE: `tt = graph_length * sum(tt_i) / sum(L_i)`.
+      Edges-over-max 1,794 -> 242 (config_speeds) and 661 -> 1 (sumo_speeds);
+      A* now matches Dijkstra 30/30 on every combination.
+      `_AGGREGATION_VERSION = "v2-length-weighted-pace"` is in the SUMO cache key.
+      **Shared baseline:** a NEW Phase-2 artifact
+      `data/network/<name>_<hash>_sumospeeds.graphml` re-annotates speed_kph /
+      travel_time from the generated net.net.xml (97.53% coverage; 173 edges
+      keep config speeds, each stamped `speed_source`). Phase 1 is UNCHANGED
+      and still builds independently — do not make the graph build depend on
+      netconvert. Select via `baseline_graph` in `configs/congestion.yaml`
+      (default `sumo_speeds`) / `load_baseline_graph`; the choice is stamped
+      into every `TrafficSnapshot.meta`. Mean speed_kph 22.74 -> 51.49, so
+      ABSOLUTE times on this graph are optimistic for Bengaluru — ratios are
+      comparable, absolute values are not realistic. `config_speeds` remains
+      available and `configs/area_central_blr.yaml` is untouched.
+      **Demand:** `period_heavy` 0.6 -> 1.2. Teleports 30.5% -> 5.13%, ratio
+      2.11x on OD paths. Heavy does NOT fully drain at sim_end 5000 (12.2%
+      still running); draining it needs sim_end 12000 which RAISES teleports to
+      7.4% for a 0.3% ratio change, so it was declined deliberately — a teleport
+      falsifies edge travel times, an unfinished trip does not.
+      **The 20x clip is still needed** — a zero-teleport, fully-drained light
+      run still clips 1.53% and inflates 34% without it. Cause is SUMO's
+      per-interval traveltime being dominated by one car at a red light, not
+      gridlock. Clipped samples' median is 86-97x free-flow: a cleanly
+      separated tail, not a threshold judgement call.
+      **Ratios on the one denominator:** BPR 1.18x / 2.53x, SUMO 1.81x / 2.11x
+      (OD path). BPR heavy is 0.034 OVER its 2.5 band and was deliberately NOT
+      retuned. They bracket rather than agree and must not be merged into a
+      single "congestion level": SUMO's floor is higher (signal delay in the
+      numerator, none in the denominator), BPR's range is wider (synthetic
+      demand loads shortest paths, exactly where an OD-path measurement walks).
+      Heavy-vs-light contrast is modest (1.55x -> 1.85x per edge); 61% of SUMO
+      edges see no vehicle even at heavy. See `docs/tuning/sumo_calibration.md`.
+- [x] Phase 3 — Classical baseline: `Router` ABC, Dijkstra, A* (cost equality vs. Dijkstra on 100 OD pairs).
+      A*'s heuristic is admissible only while snapshot times are >= the
+      BASELINE GRAPH's free-flow times. True for FreeFlow and BPR always, and
+      for SUMO on `sumo_speeds`; FALSE for SUMO on `config_speeds` (242 edges).
+      See the docstring in `algorithms/classical.py` and Phase 2d above.
 - [x] Phase 4 — ACO (MMAS) implemented, tuned and measured. **Exit criterion
       MISSED — see Phase 4d for the authoritative numbers and CIs.** The
       stretch-1.157 plateau noted below was a PRE-MEMO observation; Phase 4c

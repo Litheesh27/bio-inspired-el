@@ -63,6 +63,7 @@ from bioroute.congestion.base import (
     save_snapshot_cache,
 )
 from bioroute.congestion.snapshot import EdgeKey, TrafficSnapshot
+from bioroute.network.graph import baseline_hash_of, baseline_meta, baseline_of
 
 
 def _load_yaml(path: str | Path) -> dict[str, Any]:
@@ -148,8 +149,19 @@ class BPRProvider(CongestionProvider):
         # the assignment algorithm itself (e.g. shared-ramp -> independent
         # per-level assignment) invalidates on-disk snapshots even if the
         # YAML config content were ever unchanged.
+        # PHASE 2D: the free-flow BASELINE the graph carries is folded in
+        # too. BPR's t0 is the graph's own `travel_time`, so a snapshot
+        # computed on the config-speeds graph is a different object from one
+        # computed on the sumo-speeds graph -- but both graphs share the same
+        # AREA config hash, so without this the sumo-speeds run would have
+        # silently reused the config-speeds cache files.
         self._cong_hash = _canonical_hash(
-            {**self._raw_cfg, "_assignment_version": _ASSIGNMENT_VERSION}
+            {
+                **self._raw_cfg,
+                "_assignment_version": _ASSIGNMENT_VERSION,
+                "_baseline": baseline_of(G),
+                "_baseline_hash": baseline_hash_of(G),
+            }
         )
         self._cache_dir = Path(cache_dir) if cache_dir is not None else Path(
             self._raw_cfg.get("cache_dir", "data/results/congestion_cache")
@@ -200,6 +212,7 @@ class BPRProvider(CongestionProvider):
                 "n_od_pairs": len(self._od_pairs),
                 "n_lanes_tagged": self._n_tagged,
                 "n_lanes_default": self._n_default,
+                **baseline_meta(self._G),
             },
         )
         self._save_cache(cache_path, snap)

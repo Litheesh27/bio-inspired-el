@@ -15,6 +15,19 @@ criterion (Physarum reaches stretch = 1.0 on >=80% of OD pairs) is
 explicitly measured on an *uncongested* graph, so this provider is a real
 dependency of a later phase, not scaffolding.
 
+PHASE 2D -- the shared free-flow baseline. "Free-flow" used to mean two
+different things: the graph's `travel_time` came from the conservative
+Bengaluru speeds in configs/area_central_blr.yaml, while SUMO used its own
+faster OSM/netconvert speeds, so SUMO *congested* times could land below
+the graph's *free-flow* times and no ratio was comparable across providers.
+network/graph.py now defines a second baseline graph re-annotated from the
+SUMO net, and `load_baseline_graph` selects between them. Every provider
+here stamps `baseline`/`baseline_hash` into `TrafficSnapshot.meta` (via
+`network.graph.baseline_meta`) so a result row always records which
+denominator produced it -- and BPRProvider/SUMOProvider additionally fold
+the baseline into their snapshot CACHE KEY, because the two graphs share an
+area-config hash while carrying different travel times on every edge.
+
 PHASE 4D ADDITION -- concurrency-safe snapshot caching. This module also
 owns the on-disk snapshot cache primitives shared by BPRProvider and
 SUMOProvider (`write_json_atomic`, `read_json_cache`) and the serial
@@ -71,6 +84,7 @@ from typing import Any, Iterable, Sequence
 import networkx as nx
 
 from bioroute.congestion.snapshot import TrafficSnapshot
+from bioroute.network.graph import baseline_meta
 
 
 class CongestionProvider(ABC):
@@ -122,7 +136,10 @@ class FreeFlowProvider(CongestionProvider):
             time_bin=time_bin,
             source="freeflow",
             travel_time=travel_time,
-            meta={"n_edges": len(travel_time)},
+            # PHASE 2D: every snapshot records WHICH free-flow baseline the
+            # graph it came from carries, so a result row is never ambiguous
+            # about the denominator its ratios were computed against.
+            meta={"n_edges": len(travel_time), **baseline_meta(self._G)},
         )
 
 

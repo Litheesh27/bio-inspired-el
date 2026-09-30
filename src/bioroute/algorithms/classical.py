@@ -12,10 +12,24 @@ distance from a node to the target, divided by the *global maximum* edge
 speed anywhere in the graph (computed once in `prepare`, not a local or
 typical speed -- a local speed would make the heuristic inadmissible and
 silently non-optimal whenever the true path passes through a faster
-segment than the one near the current node). Congestion only ever
-*increases* edge travel time above the free-flow value speed_kph implies,
-so a heuristic based on free-flow max speed remains a valid lower bound
-under any TrafficSnapshot (freeflow, BPR light/heavy, or SUMO).
+segment than the one near the current node).
+
+ADMISSIBILITY IS CONDITIONAL — it depends on the baseline graph, not just
+on the snapshot. The heuristic is a valid lower bound only while every
+snapshot travel time is >= the free-flow value this graph's `speed_kph`
+implies. That holds unconditionally for `FreeFlowProvider` and for
+`BPRProvider` (BPR multiplies free-flow by a factor >= 1), and it holds on
+the `sumo_speeds` baseline graph, where the free-flow denominator is derived
+from the same SUMO network the congested times come from.
+
+It does NOT hold for a SUMO snapshot on the `config_speeds` graph: SUMO's
+own speed limits are faster than the conservative Bengaluru table in
+`configs/area_central_blr.yaml`, so 242 edges carry congested times BELOW
+that graph's free-flow value and A* can return a non-optimal path. This was
+a live bug found in Phase 2d, masked by A*-vs-Dijkstra tests that happened to
+sample unaffected OD pairs. Pair SUMO snapshots with the `sumo_speeds`
+baseline (the default in `configs/congestion.yaml`); see
+`docs/tuning/sumo_calibration.md`.
 
 Both routers are one-shot: `step()` computes the full solution on its first
 call and is a no-op on every subsequent call, and disruption recovery is

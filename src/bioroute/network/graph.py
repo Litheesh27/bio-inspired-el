@@ -17,10 +17,19 @@ re-parsed on load. ``load_cached_graph`` passes an explicit ``edge_dtypes``
 converter to ``ox.load_graphml`` so a graph loaded from cache has exactly
 the same attribute types (list[int] osmid, float length/travel_time) as one
 freshly built by ``build_graph``.
+
+PHASE 2D ADDITION -- the shared free-flow baseline. A second, OPTIONAL
+graph artifact is defined at the bottom of this module: the same Phase 1
+graph with ``speed_kph``/``travel_time`` re-annotated from the speeds in
+the SUMO net, cached under its own hash. Phase 1 is untouched -- see the
+"PHASE 2D" section header for why that direction of dependency is
+load-bearing -- and `load_baseline_graph` is the selector between the two.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -189,3 +198,352 @@ def get_or_build_graph(
     G, report_stats = build_graph(cfg, G_raw)
     save_graph(G, path)
     return G, report_stats, False
+
+
+# ==========================================================================
+# PHASE 2D: one shared free-flow baseline
+# ==========================================================================
+#
+# The problem this closes. Before Phase 2d "free-flow" meant two different
+# things at once:
+#
+#   * the graph's ``travel_time`` came from the deliberately conservative
+#     Bengaluru ``speeds_kph`` table in configs/area_central_blr.yaml
+#     (residential 20 km/h, primary 40 km/h, ...);
+#   * SUMO's ``net.net.xml`` derives its own free-flow speed per edge from
+#     OSM tags and netconvert's per-highway-type defaults, which are
+#     FASTER.
+#
+# So a SUMO *congested* travel time could come out BELOW the graph's
+# *free-flow* travel time on the same edge, and "SUMO 1.7x" and "BPR 1.1x"
+# were ratios against two different denominators -- not comparable, and not
+# reportable side by side.
+#
+# The fix is to re-annotate ``speed_kph``/``travel_time`` on the cached
+# graph from the speeds in the generated net.net.xml, and cache THAT as a
+# separate artifact with its own hash. All three providers then reference
+# one graph, so every ratio shares a denominator.
+#
+# ARCHITECTURAL CONSTRAINT, deliberately respected: this does NOT run at
+# graph-build time. ``build_graph`` and scripts/01_build_network.py are
+# untouched and still need no SUMO -- otherwise you could not build the
+# graph without first running netconvert, which is a backwards dependency.
+# Everything below is a *Phase 2* step that consumes the Phase 1 artifact
+# and produces a second, independent one.
+
+BASELINE_CONFIG_SPEEDS = "config_speeds"
+BASELINE_SUMO_SPEEDS = "sumo_speeds"
+
+# Bumped whenever the annotation MATH changes (independent of any config
+# edit), so a cached sumo-speeds graph built under an older rule is never
+# silently reused. See `annotate_speeds_from_sumo` for what "length-weighted
+# harmonic" means and why it is the right mean here.
+SUMO_SPEEDS_ANNOTATION_VERSION = "v1-length-weighted-harmonic-speed"
+
+
+def baseline_of(G: nx.MultiDiGraph) -> str:
+    """Which free-flow baseline this graph carries.
+
+    Stamped into ``G.graph`` by `annotate_speeds_from_sumo`, and absent on
+    any graph produced by Phase 1 -- hence the default. Reading it off the
+    graph (rather than threading a flag through every provider constructor)
+    is what lets FreeFlowProvider / BPRProvider / SUMOProvider all record
+    the baseline in ``TrafficSnapshot.meta`` with no change to the
+    CongestionProvider contract.
+    """
+    return str(G.graph.get("baseline", BASELINE_CONFIG_SPEEDS))
+
+
+def baseline_hash_of(G: nx.MultiDiGraph) -> str:
+    """The baseline artifact's hash, or "" for the Phase 1 config-speeds
+    graph (whose identity is already the area config hash)."""
+    return str(G.graph.get("baseline_hash", ""))
+
+
+def baseline_meta(G: nx.MultiDiGraph) -> dict[str, str]:
+    """The provenance pair every snapshot's ``meta`` carries, so a result
+    row records which free-flow baseline produced it."""
+    return {"baseline": baseline_of(G), "baseline_hash": baseline_hash_of(G)}
+
+
+def file_sha256(path: str | Path, n_chars: int = 12) -> str:
+    """Short content hash of a whole file, read in chunks."""
+    h = hashlib.sha256()
+    with Path(path).open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()[:n_chars]
+
+
+# netconvert opens every net.net.xml with an XML comment holding the
+# generation TIMESTAMP and the output path it was told to write to, e.g.
+#   <!-- generated on 2026-09-27T14:46:42.293800+05:30 by ... netconvert 1.27.1
+#   <netconvertConfiguration> ... </netconvertConfiguration>
+#   -->
+# Both of those change on every run even when the network produced is
+# byte-identical (verified: regenerating from the same OSM extract and the
+# same flags differs ONLY inside this comment). Hashing them would make the
+# baseline artifact, and every BPR/SUMO snapshot keyed off it, invalidate
+# on every pipeline re-run for no reason at all -- so the hash starts after
+# the comment.
+_NET_HEADER_MARKER = b"<!-- generated on"
+_NET_HEADER_END = b"-->"
+
+
+def sumo_net_content_sha256(path: str | Path, n_chars: int = 12) -> str:
+    """Short content hash of a SUMO net file, ignoring netconvert's leading
+    generated-on header comment (see the note above).
+
+    Hashing the CONTENT rather than only the netconvert flags is
+    deliberate: the flags plus the OSM extract determine the net in
+    principle, but only a content hash actually notices that the net on
+    disk was regenerated from a different extract, hand-edited, or copied
+    in from another run.
+    """
+    h = hashlib.sha256()
+    with Path(path).open("rb") as f:
+        first = f.read(1 << 20)
+        marker = first.find(_NET_HEADER_MARKER)
+        end = first.find(_NET_HEADER_END, marker) if marker != -1 else -1
+        if end != -1:
+            first = first[end + len(_NET_HEADER_END):]
+        h.update(first)
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()[:n_chars]
+
+
+def sumo_speeds_baseline_hash(
+    cfg: AreaConfig,
+    net_path: str | Path,
+    netconvert_flags: list[str] | None = None,
+) -> str:
+    """Config hash for the sumo-speeds graph artifact.
+
+    Covers everything the artifact depends on: which area graph it
+    re-annotates, the exact net.net.xml the speeds come from, the
+    netconvert flags that produced that net, and the annotation-rule
+    version. Changing any of them changes the hash and therefore the cache
+    path -- the CLAUDE.md cache-keying invariant.
+    """
+    payload = {
+        "area_config_hash": config_hash(cfg),
+        "net_sha256": sumo_net_content_sha256(net_path),
+        "netconvert_flags": list(netconvert_flags or []),
+        "annotation_version": SUMO_SPEEDS_ANNOTATION_VERSION,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
+
+
+def sumo_speeds_cache_path(
+    cfg: AreaConfig, baseline_hash: str, network_dir: str | Path = "data/network"
+) -> Path:
+    """Path of the cached sumo-speeds graph. Deliberately a SEPARATE file
+    from `cache_path`'s Phase 1 artifact rather than an overwrite: the
+    config-speeds graph must stay byte-for-byte reproducible."""
+    return (
+        Path(network_dir)
+        / f"{cfg.name}_{config_hash(cfg)}_{baseline_hash}_sumospeeds.graphml"
+    )
+
+
+def annotate_speeds_from_sumo(
+    G: nx.MultiDiGraph,
+    sumo_edges,
+    match,
+    baseline_hash: str = "",
+) -> tuple[nx.MultiDiGraph, dict]:
+    """Return a COPY of ``G`` whose ``speed_kph``/``travel_time`` come from
+    the SUMO net's free-flow speeds, plus a coverage report.
+
+    ``sumo_edges`` is ``network.ids.load_sumo_edges``'s output (each record
+    carrying ``speed_mps``); ``match`` is
+    ``network.ids.match_sumo_edges_to_graph``'s MatchResult -- i.e. the same
+    97.5%-coverage ID join Phase 2c already relies on, not a second,
+    separately-drifting matching scheme.
+
+    Which mean. A graph edge can match several SUMO edges, because
+    netconvert splits an OSM way at every interior shape node. Averaging
+    their speeds ARITHMETICALLY would not preserve travel time: 100 m at
+    10 m/s followed by 100 m at 50 m/s takes 12 s, not the 200/30 = 6.7 s
+    an arithmetic mean implies. So the effective speed is the
+    LENGTH-WEIGHTED HARMONIC mean, ``sum(L_i) / sum(L_i / v_i)``, which is
+    exactly "total length over total free-flow time" and therefore
+    reproduces the traversal time of the real chain of segments.
+    ``travel_time`` is then the GRAPH edge's own length divided by that
+    speed, so the graph's geometry -- not SUMO's, which differs slightly
+    after junction joining -- still sets the distance.
+
+    Edges with no SUMO match, or whose matched SUMO edges all report a
+    non-positive speed, KEEP their config-derived speed and travel time
+    untouched, are stamped ``speed_source="config"``, and are counted in
+    the report. Nothing is silently dropped or defaulted.
+    """
+    G2 = G.copy()
+    speed_by_sid = {se.sumo_id: float(se.speed_mps) for se in sumo_edges}
+    length_by_sid = {se.sumo_id: float(se.length_m) for se in sumo_edges}
+
+    n_sumo = 0
+    n_config = 0
+    tt_before = 0.0
+    tt_after = 0.0
+    speeds_before: list[float] = []
+    speeds_after: list[float] = []
+
+    for u, v, k, data in G2.edges(keys=True, data=True):
+        old_tt = float(data["travel_time"])
+        old_speed = float(data.get("speed_kph", 0.0))
+        tt_before += old_tt
+        speeds_before.append(old_speed)
+
+        total_len = 0.0
+        total_time = 0.0
+        for sid in match.edge_to_sumo.get((u, v, k), ()):
+            spd = speed_by_sid.get(sid, 0.0)
+            length = length_by_sid.get(sid, 0.0)
+            if spd <= 0.0 or length <= 0.0:
+                continue
+            total_len += length
+            total_time += length / spd
+
+        new_tt = None
+        if total_time > 0.0:
+            effective_mps = total_len / total_time
+            candidate = float(data["length"]) / effective_mps
+            # Defensive: a degenerate speed must never break the graph
+            # invariant (finite, positive travel_time).
+            if candidate > 0.0 and candidate == candidate and candidate != float("inf"):
+                new_tt = candidate
+
+        if new_tt is None:
+            data["speed_source"] = "config"
+            n_config += 1
+            tt_after += old_tt
+            speeds_after.append(old_speed)
+        else:
+            data["speed_kph"] = (total_len / total_time) * 3.6
+            data["travel_time"] = new_tt
+            data["speed_source"] = "sumo"
+            n_sumo += 1
+            tt_after += new_tt
+            speeds_after.append(data["speed_kph"])
+
+    G2.graph["baseline"] = BASELINE_SUMO_SPEEDS
+    G2.graph["baseline_hash"] = baseline_hash
+    G2.graph["annotation_version"] = SUMO_SPEEDS_ANNOTATION_VERSION
+
+    n_edges = G2.number_of_edges()
+    report = {
+        "n_graph_edges": n_edges,
+        "n_edges_sumo_speed": n_sumo,
+        "n_edges_kept_config_speed": n_config,
+        "coverage_pct": 100.0 * n_sumo / n_edges if n_edges else 0.0,
+        "mean_speed_kph_before": (
+            sum(speeds_before) / len(speeds_before) if speeds_before else 0.0
+        ),
+        "mean_speed_kph_after": (
+            sum(speeds_after) / len(speeds_after) if speeds_after else 0.0
+        ),
+        "total_freeflow_time_s_before": tt_before,
+        "total_freeflow_time_s_after": tt_after,
+        "total_freeflow_time_ratio_after_over_before": (
+            tt_after / tt_before if tt_before else float("nan")
+        ),
+    }
+    return G2, report
+
+
+def build_sumo_speeds_graph(
+    cfg: AreaConfig,
+    G: nx.MultiDiGraph,
+    net_path: str | Path = "data/sumo/net.net.xml",
+    netconvert_flags: list[str] | None = None,
+    network_dir: str | Path = "data/network",
+    sumolib_module=None,
+    force: bool = False,
+) -> tuple[nx.MultiDiGraph, dict, bool]:
+    """Load-or-build the sumo-speeds baseline graph for ``cfg``.
+
+    Returns (graph, report, was_cached); ``report`` is None on a cache hit,
+    since the coverage counts are not recoverable from the artifact alone
+    -- exactly how `get_or_build_graph` treats its own build stats.
+
+    This is the Phase 2 step referred to in the section header; it is never
+    called from Phase 1.
+    """
+    # Imported lazily so network/graph.py keeps no import-time dependency on
+    # the SUMO side of the codebase.
+    from bioroute.network.ids import (  # noqa: PLC0415
+        load_sumo_edges,
+        match_sumo_edges_to_graph,
+    )
+
+    baseline_hash = sumo_speeds_baseline_hash(cfg, net_path, netconvert_flags)
+    path = sumo_speeds_cache_path(cfg, baseline_hash, network_dir)
+    if path.exists() and not force:
+        return load_cached_graph(path), None, True
+
+    sumo_edges = load_sumo_edges(str(net_path), sumolib_module=sumolib_module)
+    match = match_sumo_edges_to_graph(G, sumo_edges)
+    G2, report = annotate_speeds_from_sumo(G, sumo_edges, match, baseline_hash=baseline_hash)
+    save_graph(G2, path)
+    return G2, report, False
+
+
+def load_baseline_graph(
+    cfg: AreaConfig,
+    baseline: str = BASELINE_CONFIG_SPEEDS,
+    network_dir: str | Path = "data/network",
+    net_path: str | Path = "data/sumo/net.net.xml",
+    netconvert_flags: list[str] | None = None,
+) -> tuple[nx.MultiDiGraph, dict]:
+    """THE loader every phase from 2 onward should use to obtain the single
+    graph all providers share.
+
+    ``baseline`` is the explicit selector: ``"config_speeds"`` (Phase 1's
+    artifact, speeds from configs/area_central_blr.yaml) or
+    ``"sumo_speeds"`` (re-annotated from net.net.xml). Callers that want
+    the project-wide default read it from configs/congestion.yaml's
+    ``baseline_graph`` key.
+
+    Returns (graph, info) where info records the baseline name, its hash and
+    the artifact path -- all of which reach provider snapshot meta via
+    `baseline_meta`, so a result row can always be traced to the denominator
+    its ratios were computed against.
+    """
+    if baseline == BASELINE_CONFIG_SPEEDS:
+        path = cache_path(cfg, network_dir)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Cached graph not found at {path}; run scripts/01_build_network.py first."
+            )
+        G = load_cached_graph(path)
+        # Phase 1's artifact predates the stamp; make it explicit in memory
+        # so `baseline_of` is never merely falling back to its default.
+        G.graph.setdefault("baseline", BASELINE_CONFIG_SPEEDS)
+        return G, {
+            "baseline": BASELINE_CONFIG_SPEEDS,
+            "baseline_hash": "",
+            "path": str(path),
+        }
+
+    if baseline == BASELINE_SUMO_SPEEDS:
+        baseline_hash = sumo_speeds_baseline_hash(cfg, net_path, netconvert_flags)
+        path = sumo_speeds_cache_path(cfg, baseline_hash, network_dir)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Sumo-speeds baseline graph not found at {path}; run "
+                f"scripts/02_run_sumo.py to build it."
+            )
+        G = load_cached_graph(path)
+        return G, {
+            "baseline": BASELINE_SUMO_SPEEDS,
+            "baseline_hash": baseline_hash,
+            "path": str(path),
+        }
+
+    raise ValueError(
+        f"Unknown baseline {baseline!r}; expected "
+        f"{BASELINE_CONFIG_SPEEDS!r} or {BASELINE_SUMO_SPEEDS!r}"
+    )

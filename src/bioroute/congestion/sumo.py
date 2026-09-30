@@ -16,6 +16,34 @@ edge's traveltime into a single simulation-wide, length-weighted mean (with
 implausible-value clipping, see ``_clip_implausible_traveltime``), and asks
 ``network/ids.py`` to fold that down to one value per graph edge (u, v, k).
 
+PHASE 2D
+--------
+Two changes, both driven by measurement (docs/tuning/sumo_calibration.md):
+
+* ``period_heavy`` was recalibrated 0.6 -> 1.2. At 0.6, 30.5% of vehicles
+  teleported -- i.e. jumped past a blockage instead of driving through it,
+  so the edges they skipped carried travel times that never happened. The
+  congestion ratio that setting produced was largely manufactured by those
+  jam waits. ``_parse_sumo_stats`` now extracts the per-category teleport
+  breakdown and the completed-trip statistics so this stays visible on
+  every run rather than having to be re-derived from the log.
+* Every snapshot records which free-flow BASELINE graph it was produced
+  against (``meta["baseline"]``), and the baseline is folded into the
+  snapshot cache key. Unmatched graph edges fall back to the graph's own
+  ``travel_time``, so a SUMO snapshot is not independent of the baseline --
+  and the two baseline graphs share an area-config hash, so without this a
+  sumo-speeds run would silently read back config-speeds numbers. See
+  ``network/graph.py``'s PHASE 2D section.
+
+The ``implausible_cap_factor`` clipping was re-examined here and KEPT: the
+prior that implausible values come from gridlock turned out to be wrong.
+A zero-teleport, fully-drained light run still clips 1.53% of samples and
+still contains a 2,141x-free-flow sample; removing the cap moves that run's
+length-weighted ratio from 1.22x to 1.83x. The values come from SUMO's
+per-interval traveltime being length/mean-speed over whatever vehicles
+occupied the edge in that bin, which a single car stopped at a signal can
+dominate. That is a sampling artefact present at every demand level.
+
 $SUMO_HOME resolution
 ----------------------
 $SUMO_HOME is set at Machine level (to ``C:\\Sumo\\``, note the trailing
@@ -53,6 +81,7 @@ from bioroute.congestion.base import (
     save_snapshot_cache,
 )
 from bioroute.congestion.snapshot import EdgeKey, TrafficSnapshot
+from bioroute.network.graph import baseline_hash_of, baseline_meta, baseline_of
 from bioroute.network.ids import (
     ParsedSumoEdge,
     coverage_report,
@@ -63,6 +92,15 @@ from bioroute.network.ids import (
 )
 
 _DEFAULT_SUMO_HOME = "C:/Sumo"
+
+# Bumped whenever the edgedata -> graph-edge aggregation RULE changes,
+# independent of any YAML edit, so stale on-disk snapshots are never
+# silently reused across an algorithm change. Mirrors BPRProvider's
+# `_ASSIGNMENT_VERSION`. v2: `network/ids.compute_edge_travel_times` now
+# works in PACE (graph_length * sum(tt_i) / sum(L_i)) instead of taking a
+# length-weighted mean of the matched segments' travel times, which was
+# dimensionally wrong -- see that module's docstring.
+_AGGREGATION_VERSION = "v2-length-weighted-pace"
 
 
 def resolve_sumo_home() -> str:
@@ -273,6 +311,22 @@ def run_simulation(
 
 
 def _parse_sumo_stats(text: str) -> dict[str, Any]:
+    """Pull the vehicle census out of sumo's own end-of-run report.
+
+    PHASE 2D widened this. Teleports are the calibration signal that
+    matters -- a teleport is a vehicle that JUMPED past a blockage instead
+    of driving through it, so every edge it skipped gets a travel time that
+    never happened -- and the raw total hid which kind. The per-category
+    breakdown ("Jam", "Yield", "Wrong Lane") is what distinguishes genuine
+    gridlock from a handful of lane-choice artefacts, so it is parsed out
+    rather than left in the log.
+
+    ``mean_speed_mps``/``mean_duration_s``/... come from the
+    ``Statistics (avg of N)`` block, which ``--duration-log.statistics``
+    prints and which covers COMPLETED trips only -- hence
+    ``n_trips_completed``, the gap to ``inserted`` being the vehicles still
+    circulating when the clock ran out.
+    """
     stats: dict[str, Any] = {}
     m = re.search(r"Inserted:\s*(\d+)(?:\s*\(Loaded:\s*(\d+)\))?", text)
     if m:
@@ -284,9 +338,46 @@ def _parse_sumo_stats(text: str) -> dict[str, Any]:
     m = re.search(r"Waiting:\s*(\d+)", text)
     if m:
         stats["waiting_at_end"] = int(m.group(1))
-    m = re.search(r"Teleports:\s*(\d+)", text)
+    m = re.search(r"Teleports:\s*(\d+)\s*(?:\(([^)]*)\))?", text)
     if m:
         stats["teleports"] = int(m.group(1))
+        categories: dict[str, int] = {}
+        if m.group(2):
+            for part in m.group(2).split(","):
+                if ":" in part:
+                    key, value = part.split(":", 1)
+                    try:
+                        categories[key.strip()] = int(value.strip())
+                    except ValueError:
+                        continue
+        stats["teleport_categories"] = categories
+
+    if stats.get("inserted"):
+        stats["teleport_pct_of_inserted"] = 100.0 * stats.get("teleports", 0) / stats["inserted"]
+        stats["running_pct_of_inserted"] = (
+            100.0 * stats.get("running_at_end", 0) / stats["inserted"]
+        )
+
+    # The `Statistics (avg of N)` block. Anchored on that header rather than
+    # searched globally, because sumo ALSO prints a bare `Duration:` in its
+    # `Performance:` block -- that one is wall-clock seconds, and a plain
+    # `re.search` picks it up first and silently reports it as the mean trip
+    # duration.
+    m = re.search(r"Statistics \(avg of (\d+)\):(.*?)(?:\n\S|\Z)", text, re.S)
+    if m:
+        stats["n_trips_completed"] = int(m.group(1))
+        block = m.group(2)
+        for key, label in (
+            ("mean_route_length_m", "RouteLength"),
+            ("mean_speed_mps", "Speed"),
+            ("mean_duration_s", "Duration"),
+            ("mean_waiting_time_s", "WaitingTime"),
+            ("mean_timeloss_s", "TimeLoss"),
+            ("mean_depart_delay_s", "DepartDelay"),
+        ):
+            mm = re.search(rf"{label}:\s*([0-9.]+)", block)
+            if mm:
+                stats[key] = float(mm.group(1))
     return stats
 
 
@@ -325,7 +416,11 @@ def parse_edgedata(
       - sampled_seconds: sumo_edge_id -> total sampledSeconds observed
         (used for zero-traffic-fraction reporting).
       - report: {n_edges_total, n_edges_with_traffic, frac_zero_traffic,
-        n_intervals}.
+        n_intervals}, plus the PHASE 2D clipping census
+        (n_interval_samples, n_samples_clipped, frac_samples_clipped,
+        max_sample_ratio_to_freeflow) so it is always visible whether
+        `implausible_cap_factor` is actually doing anything on this run
+        rather than silently being a no-op.
     """
     tree = ET.parse(str(path))
     root = tree.getroot()
@@ -335,6 +430,9 @@ def parse_edgedata(
     sampled_seconds: dict[str, float] = {}
     all_ids: set[str] = set()
     n_intervals = 0
+    n_samples = 0
+    n_clipped = 0
+    max_ratio = 0.0
 
     for interval in root.findall("interval"):
         n_intervals += 1
@@ -348,7 +446,13 @@ def parse_edgedata(
                 continue
             tt = float(tt_raw)
             ff = freeflow_tt_by_sumo_id.get(sid, tt)
-            tt = _clip_implausible_traveltime(tt, ff, cap_factor)
+            n_samples += 1
+            if ff > 0:
+                max_ratio = max(max_ratio, tt / ff)
+            clipped = _clip_implausible_traveltime(tt, ff, cap_factor)
+            if clipped < tt:
+                n_clipped += 1
+            tt = clipped
             weighted_sum[sid] = weighted_sum.get(sid, 0.0) + tt * ss
             weight_total[sid] = weight_total.get(sid, 0.0) + ss
 
@@ -364,6 +468,16 @@ def parse_edgedata(
             (n_edges_total - n_with_traffic) / n_edges_total if n_edges_total else 1.0
         ),
         "n_intervals": n_intervals,
+        # Phase 2d clipping census. `frac_samples_clipped == 0` means the
+        # `implausible_cap_factor` guard fired on nothing at all for this
+        # run -- worth knowing, and worth KEEPING the guard for anyway (it
+        # costs one `min` per sample and is the only thing standing between
+        # a future gridlocked run and a corrupted edge mean).
+        "n_interval_samples": n_samples,
+        "n_samples_clipped": n_clipped,
+        "frac_samples_clipped": (n_clipped / n_samples) if n_samples else 0.0,
+        "max_sample_ratio_to_freeflow": max_ratio,
+        "cap_factor": cap_factor,
     }
     return traveltime, sampled_seconds, report
 
@@ -410,7 +524,19 @@ class SUMOProvider(CongestionProvider):
             ).items()
         }
         self._area_hash = config_hash(area_cfg)
-        self._sumo_cfg_hash = _canonical_hash(self._raw_cfg)
+        # PHASE 2D: the graph's free-flow BASELINE is folded into the cache
+        # key. Unmatched graph edges fall back to the graph's own
+        # `travel_time` (see network/ids.compute_edge_travel_times), so a
+        # SUMO snapshot is not independent of which baseline graph it was
+        # built on -- and both baseline graphs share the same AREA hash.
+        self._sumo_cfg_hash = _canonical_hash(
+            {
+                **self._raw_cfg,
+                "_aggregation_version": _AGGREGATION_VERSION,
+                "_baseline": baseline_of(G),
+                "_baseline_hash": baseline_hash_of(G),
+            }
+        )
         self._cache_dir = Path(cache_dir) if cache_dir is not None else Path(
             self._raw_cfg.get("cache_dir", "data/results/congestion_cache")
         )
@@ -524,6 +650,7 @@ class SUMOProvider(CongestionProvider):
                 "coverage_pct": self._final_coverage["coverage_pct"],
                 "frac_sumo_edges_zero_traffic": report["frac_zero_traffic"],
                 "geometric_fallback_applied": self._geometric_fallback_applied,
+                **baseline_meta(self._G),
             },
         )
         self._save_cache(cache_path, snap)

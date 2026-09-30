@@ -237,3 +237,140 @@ def test_sumo_provider_reproducible_from_cached_edgedata(real_graph, area_cfg, t
         assert s1.travel_time[k] == pytest.approx(s2.travel_time[k])
     shutil.rmtree(cache_a, ignore_errors=True)
     shutil.rmtree(cache_b, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
+# PHASE 2D: shared free-flow baseline + the implausible-value clipping census
+# --------------------------------------------------------------------------
+
+
+def test_sumo_snapshot_meta_records_baseline(provider):
+    """A result row must be able to say which free-flow baseline produced
+    it; the `provider` fixture is built on the Phase 1 config-speeds graph."""
+    from bioroute.network.graph import BASELINE_CONFIG_SPEEDS
+
+    snap = provider.snapshot("light")
+    assert snap.meta["baseline"] == BASELINE_CONFIG_SPEEDS
+    assert "baseline_hash" in snap.meta
+
+
+def test_sumo_cache_key_differs_across_baselines(real_graph, area_cfg, tmp_path):
+    """Unmatched graph edges fall back to the GRAPH's own free-flow
+    travel_time, so a SUMO snapshot is a function of the baseline too. Both
+    baseline graphs share an area-config hash, so without the baseline in
+    the key the sumo-speeds run would silently read back config-speeds
+    numbers."""
+    from bioroute.congestion.sumo import SUMOProvider
+    from bioroute.network.graph import BASELINE_SUMO_SPEEDS
+
+    G2 = real_graph.copy()
+    G2.graph["baseline"] = BASELINE_SUMO_SPEEDS
+    G2.graph["baseline_hash"] = "cafebabe0001"
+
+    p_cfg = SUMOProvider(real_graph, area_cfg, sumo_cfg_path=SUMO_CONFIG_PATH, cache_dir=tmp_path)
+    p_sumo = SUMOProvider(G2, area_cfg, sumo_cfg_path=SUMO_CONFIG_PATH, cache_dir=tmp_path)
+    assert p_cfg._cache_path("heavy") != p_sumo._cache_path("heavy")
+    assert p_sumo.snapshot("heavy").meta["baseline"] == BASELINE_SUMO_SPEEDS
+
+
+def test_edgedata_report_includes_clipping_census(provider):
+    """`implausible_cap_factor` must be observable, not invisible: the
+    report says how many interval samples the cap actually fired on, so
+    "the clip is a no-op now" is a measurable claim rather than a guess."""
+    for level in provider.levels:
+        rep = provider.edgedata_report(level)
+        for key in (
+            "n_interval_samples",
+            "n_samples_clipped",
+            "frac_samples_clipped",
+            "max_sample_ratio_to_freeflow",
+            "cap_factor",
+        ):
+            assert key in rep, f"{key} missing from edgedata report for {level}"
+        assert rep["n_interval_samples"] > 0
+        assert 0 <= rep["n_samples_clipped"] <= rep["n_interval_samples"]
+        assert rep["frac_samples_clipped"] == pytest.approx(
+            rep["n_samples_clipped"] / rep["n_interval_samples"]
+        )
+
+
+def test_clip_implausible_traveltime_is_a_noop_below_the_cap():
+    """The guard must never touch plausible values -- if it did, every
+    congestion ratio would be biased downward."""
+    from bioroute.congestion.sumo import _clip_implausible_traveltime
+
+    assert _clip_implausible_traveltime(30.0, 10.0, 20.0) == 30.0
+    assert _clip_implausible_traveltime(199.0, 10.0, 20.0) == 199.0
+    # ... and must still bite on a genuinely implausible sample.
+    assert _clip_implausible_traveltime(100000.0, 10.0, 20.0) == 200.0
+
+
+_SUMO_LOG_SAMPLE = """Simulation ended at time: 5000.00.
+Reason: The final simulation step has been reached.
+Performance:
+ Duration: 55.55s
+ Real time factor: 90.0025
+ UPS: 44009.900277
+Vehicles:
+ Inserted: 3000
+ Running: 367
+ Waiting: 0
+ Teleports: 154 (Jam: 108, Yield: 41, Wrong Lane: 5)
+Statistics (avg of 2633):
+ RouteLength: 3330.14
+ Speed: 7.90
+ Duration: 612.59
+ WaitingTime: 320.54
+ TimeLoss: 422.02
+ DepartDelay: 0.65
+"""
+
+
+def test_parse_sumo_stats_reads_teleport_categories_and_trip_statistics():
+    """Two traps in sumo's report, both live in this fixture.
+
+    1. `Duration:` appears TWICE -- once in `Performance:` as WALL-CLOCK
+       seconds (55.55), once in `Statistics` as the mean trip duration
+       (612.59). A plain search finds the wall-clock one first and reports
+       it as a trip time.
+    2. The teleport total alone does not say whether the run gridlocked;
+       only the Jam/Yield/Wrong Lane split does, and Jam is the category
+       that means "demand exceeded what the network can carry".
+    """
+    from bioroute.congestion.sumo import _parse_sumo_stats
+
+    stats = _parse_sumo_stats(_SUMO_LOG_SAMPLE)
+    assert stats["inserted"] == 3000
+    assert stats["running_at_end"] == 367
+    assert stats["teleports"] == 154
+    assert stats["teleport_categories"] == {"Jam": 108, "Yield": 41, "Wrong Lane": 5}
+    assert stats["teleport_pct_of_inserted"] == pytest.approx(100.0 * 154 / 3000)
+    assert stats["running_pct_of_inserted"] == pytest.approx(100.0 * 367 / 3000)
+    assert stats["n_trips_completed"] == 2633
+    assert stats["mean_duration_s"] == pytest.approx(612.59), "picked up the wall-clock Duration"
+    assert stats["mean_speed_mps"] == pytest.approx(7.90)
+    assert stats["mean_timeloss_s"] == pytest.approx(422.02)
+
+
+def test_parse_sumo_stats_tolerates_teleports_without_categories():
+    from bioroute.congestion.sumo import _parse_sumo_stats
+
+    stats = _parse_sumo_stats("Inserted: 10\n Running: 0\n Teleports: 0\n")
+    assert stats["teleports"] == 0
+    assert stats["teleport_categories"] == {}
+
+
+def test_load_sumo_edges_carries_speeds(area_cfg):
+    """Phase 2d re-annotates graph speeds from these; a record with no
+    speed would silently make every edge fall back to config speeds."""
+    if PIPELINE_ARTIFACTS_MISSING:
+        pytest.skip("SUMO pipeline artifacts not found under data/sumo/.")
+    from bioroute.congestion.sumo import resolve_sumo_home as _rsh
+    from bioroute.network.ids import load_sumo_edges
+
+    sys.path.insert(0, str(Path(_rsh()) / "tools"))
+    import sumolib
+
+    edges = load_sumo_edges(str(NET_PATH), sumolib_module=sumolib)
+    assert edges
+    assert all(e.speed_mps > 0 for e in edges), "some SUMO edges reported no usable speed"

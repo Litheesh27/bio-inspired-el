@@ -9,16 +9,55 @@ seed_light: 42
 seed_heavy: 43
 
 # randomTrips.py --period (mean seconds between departures) for each
-# demand level. Smaller period = more vehicles = heavier demand. Tuned
-# empirically (see Phase 2b/2c report) so heavy demand visibly jams part of
-# the network (queueing/teleports) while light stays free-flowing.
+# demand level. Smaller period = more vehicles = heavier demand.
+#
+# PHASE 2D RECALIBRATION: period_heavy was 0.6 (6,000 vehicles). That was
+# GRIDLOCK, not congestion -- 1,825 teleports (30.5% of inserted vehicles,
+# 1,234 of them jam-teleports) and 2,422 vehicles still circulating at
+# t=5000. A teleport is a vehicle that JUMPED past a blockage instead of
+# driving through it, so the edges it skipped get travel times that never
+# happened. The 2.29x congestion ratio that setting produced was largely
+# built out of those jam waits: with the plausibility cap removed it reads
+# 37.3x, with a worst single sample of 347,532x free-flow.
+#
+# Swept 0.6 / 0.8 / 0.9 / 1.0 / 1.2 / 1.5 / 2.0 (full table in
+# docs/tuning/sumo_calibration.md). 1.2 meets BOTH targets:
+#   teleports        5.13% of inserted (154 of 3,000; 108 Jam)
+#   congestion ratio 2.11x on 100 OD paths, 1.85x length-weighted per edge,
+#                    against the shared sumo_speeds baseline
+# vs light (period 3): 1.81x / 1.55x. Mean trip duration 612.6s vs 420.6s.
+#
+# NOTE: those ratios are only correct because of the Phase 2d fix to
+# network/ids.py::compute_edge_travel_times. Measured with the previous
+# (dimensionally wrong) aggregation, heavy read 1.45x and ~2x looked
+# unreachable at any teleport rate.
 period_light: 3
-period_heavy: 0.6
+period_heavy: 1.2
 
 # Simulation departs vehicles from t=0 to t=demand_end, then keeps running
 # until t=sim_end so in-progress trips can actually finish (or, under heavy
 # demand, so the tail of the demand curve has time to load the network
 # rather than the run stopping mid-ramp-up).
+#
+# PHASE 2D: sim_end stays at 5000, measured rather than assumed. Light
+# drains completely by then (0 running). Heavy at period 1.2 does not --
+# 367 vehicles (12.2%) are still circulating -- but extending the clock is
+# a strictly bad trade here: demand stops at t=3600, so every extra
+# interval is a near-empty network carrying only vehicles that were
+# ALREADY stuck, the jam timer keeps firing on them, and teleports rise
+# while the congestion ratio does not move. Measured at period 1.2 (ratio
+# = length-weighted per graph edge vs the shared sumo_speeds baseline):
+#   sim_end  5000 -> 154 teleports (5.13%), 367 running, ratio 1.846
+#   sim_end  6000 -> 184 teleports (6.13%), 222 running
+#   sim_end  8000 -> 212 teleports (7.07%),  84 running
+#   sim_end 12000 -> 222 teleports (7.40%),   0 running, ratio 1.851
+# Full drainage IS reachable at 12000; it was declined because it costs the
+# teleport target and moves the ratio by 0.3%. A teleport falsifies edge
+# travel times (the vehicle never drove the edges it skipped); a
+# still-running vehicle does not -- every edge it did traverse contributed
+# honest data, and only its own trip-level statistics are truncated, and
+# SUMOProvider consumes edge travel times, not trip statistics. Cost of the
+# choice: 12.2% of heavy vehicles have truncated trips in tripinfo_heavy.xml.
 demand_end: 3600
 sim_end: 5000
 
@@ -42,6 +81,23 @@ netconvert_flags:
 # than either passed through raw (which would let one stalled vehicle
 # dominate an edge's whole-simulation average) or discarded outright
 # (which would erase genuine congestion signal on that edge).
+#
+# PHASE 2D re-examined whether this is still needed now that teleports are
+# rare. IT IS -- the prior that implausible values came from gridlock was
+# WRONG. Measured fraction of interval samples clipped, and what removing
+# the cap does to the length-weighted congestion ratio:
+#   period 0.6 (30.5% teleports):  7.95% clipped;  2.96x -> 52.34x
+#   period 1.2 (5.13% teleports):  2.37% clipped;  1.85x -> 14.59x
+#   period 3.0 (light, 0 teleports, fully drained):
+#                                  1.53% clipped;  1.55x ->  2.08x
+# A run with ZERO teleports still produces samples up to 2,141x free-flow
+# and still needs a 1.53% clip to keep its ratio sane. These come from
+# SUMO's per-interval traveltime being length/mean-speed over whatever
+# vehicles were on the edge in that bin: one car that entered just before
+# the bin closed, or sat at a red light (--tls.guess-signals puts signals
+# all over this network), yields an enormous traveltime from a tiny sample.
+# That is a sampling artefact, not congestion, and it exists at every
+# demand level. The guard stays, and it is not a no-op.
 implausible_cap_factor: 20.0
 
 cache_dir: data/results/congestion_cache

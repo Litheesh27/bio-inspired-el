@@ -5,6 +5,34 @@
 
 seed: 42
 
+# ---------------------------------------------------------------------------
+# PHASE 2D: which free-flow baseline graph every provider references.
+# ---------------------------------------------------------------------------
+# Before Phase 2d, "free-flow" meant two different things: the graph's
+# `travel_time` came from the conservative Bengaluru `speeds_kph` table in
+# configs/area_central_blr.yaml, while SUMO derived its own (faster) speeds
+# from OSM/netconvert defaults. SUMO *congested* times could therefore come
+# out BELOW the graph's *free-flow* times, and "SUMO 1.7x" vs "BPR 1.1x"
+# were ratios against different denominators.
+#
+#   config_speeds -- Phase 1's artifact, data/network/<name>_<hash>.graphml.
+#                    Speeds from configs/area_central_blr.yaml. Reproducible
+#                    without SUMO; this is what Phases 1-5 measured against.
+#   sumo_speeds   -- the Phase 2d re-annotation,
+#                    data/network/<name>_<hash>_<baselinehash>_sumospeeds.graphml,
+#                    built by scripts/02_run_sumo.py from the speeds in the
+#                    generated data/sumo/net.net.xml via the Phase 2c edge-ID
+#                    join. Edges with no SUMO match keep their config-derived
+#                    speed and are counted in the build report. Use this
+#                    whenever SUMO and BPR numbers are reported side by side.
+#
+# The selector is consumed by network/graph.py's `load_baseline_graph`. The
+# chosen baseline is stamped into the graph itself (`G.graph["baseline"]`),
+# folded into BOTH providers' snapshot cache keys (so switching baselines
+# never reuses a stale snapshot -- the two graphs share an area-config hash),
+# and recorded in every `TrafficSnapshot.meta`.
+baseline_graph: sumo_speeds
+
 # Capacity (vehicles/hour/lane) by OSM `highway` tag. Bengaluru-plausible
 # values: arterials (primary/secondary) carry meaningfully more than
 # residential/living_street lanes, which are often narrow, unmarked, and
