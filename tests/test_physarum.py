@@ -11,9 +11,11 @@ from __future__ import annotations
 import random
 import statistics
 import sys
+import warnings
 from pathlib import Path
 
 import networkx as nx
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -328,3 +330,172 @@ def test_physarum_bpr_heavy_measured(real_graph, area_cfg, od_pairs_30, tmp_path
 
     print(f"\n[physarum BPR heavy] median stretch={statistics.median(stretches):.4f}, "
           f"worst stretch={max(stretches):.4f} (no target -- measured only)")
+
+
+# --------------------------------------------------------------------------
+# Phase 8a regression: a closure that strands part of the graph must not make
+# the Laplacian solve singular, and a solve that IS degenerate must surface as
+# a failure instead of being absorbed by the extraction fallback.
+#
+# The degenerate condition reproduced here is the real one: Phase 7 guarantees
+# source-target connectivity only, nodes are never deleted (only edges), so a
+# closure can leave nodes the source cannot reach. Grounding `p_sink = 0`
+# grounds ONE component, so every such node contributed a zero row (isolated)
+# or an ungrounded floating block, `spsolve` returned all-NaN pressures, and
+# path extraction fell through to `full_graph_fallback` while the run still
+# reported `failed=False`. Measured over the full Phase 8 matrix: 82 of 360
+# disrupted cells, S6 on 100% of its 60 cells.
+# --------------------------------------------------------------------------
+
+
+def _toy_graph_with_spur(spur_len: int = 1) -> nx.MultiDiGraph:
+    """The A-B-C-D-E toy graph plus a dead-end spur hanging off D.
+
+    Closing the D-F link strands the whole spur: with `spur_len == 1` node F
+    becomes ISOLATED (an exactly-zero Laplacian row, the S6/S5 shape); with
+    `spur_len == 2` the stranded region is a 2-node component F-G whose
+    internal tube survives (an ungrounded floating block, the S3/S4/S5 shape).
+    Both shapes were measured in the real sweep and both went singular.
+    """
+    G = _toy_graph()
+    seg_len_m = 111.19
+    speed_kph = 36.0
+    tt = seg_len_m / (speed_kph * 1000.0 / 3600.0)
+    spur = ["F", "G", "H"][:spur_len]
+    chain = ["D", *spur]
+    for i, name in enumerate(spur, start=1):
+        G.add_node(name, y=0.0030, x=0.0001 * i)
+    for u, v in zip(chain, chain[1:]):
+        G.add_edge(u, v, key=0, length=seg_len_m, speed_kph=speed_kph, travel_time=tt)
+        G.add_edge(v, u, key=0, length=seg_len_m, speed_kph=speed_kph, travel_time=tt)
+    return G
+
+
+@pytest.mark.parametrize("spur_len", [1, 2])
+@pytest.mark.parametrize("warm", [True, False])
+def test_stranded_region_does_not_make_the_solve_singular(spur_len, warm):
+    import scipy.sparse.linalg as spla
+
+    G = _toy_graph_with_spur(spur_len)
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    assert router.active_component() == (5 + spur_len, 5 + spur_len)
+    _run(router)
+
+    # Sever the spur in both directions -> the spur is now unreachable from A.
+    router.apply_disruption([("D", "F", 0), ("F", "D", 0)], warm=warm)
+
+    n_active, n_total = router.active_component()
+    assert n_total == 5 + spur_len
+    assert n_active == 5, "the Laplacian must be restricted to A-B-C-D-E"
+
+    with warnings.catch_warnings():
+        # The exact failure this test exists to prevent.
+        warnings.simplefilter("error", spla.MatrixRankWarning)
+        result = _run(router)
+
+    assert np.all(np.isfinite(router._last_p)), "pressures must stay finite"
+    assert np.all(np.isfinite(router._D)), "conductivities must stay finite"
+    # Pressure is 0 (and flux 0) everywhere outside the active component.
+    for name in ["F", "G"][:spur_len]:
+        assert router._last_p[router._node_idx[name]] == 0.0
+    assert result.path == ["A", "B", "C", "D", "E"]
+    assert result.cost == pytest.approx(_CHAIN_COST, rel=1e-6)
+    assert "no_path_found" not in router.extraction_counts()
+
+
+@pytest.mark.parametrize("spur_len", [1, 2])
+def test_kirchhoff_still_holds_with_a_stranded_region(spur_len):
+    G = _toy_graph_with_spur(spur_len)
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    router.apply_disruption([("D", "F", 0), ("F", "D", 0)], warm=True)
+    router.step()
+
+    net = router.last_flux_by_node()
+    assert net["A"] == pytest.approx(-router._I0, abs=1e-6)
+    assert net["E"] == pytest.approx(router._I0, abs=1e-6)
+    for node in ("B", "C", "D", *["F", "G"][:spur_len]):
+        assert net[node] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_degenerate_solve_raises_instead_of_being_silently_scored():
+    """A solve the component restriction does NOT cover must raise, not warn.
+
+    Zeroing every conductivity reproduces an exactly-singular reduced system
+    inside the active component -- the general shape of any residual
+    degeneracy. The contract is that it propagates out of `step()` so Phase
+    6 records `failed=True`, rather than returning NaN pressures that the
+    extraction fallback would quietly convert into a plausible stretch.
+    """
+    from bioroute.algorithms.physarum import PhysarumDegenerateSolve
+
+    G = _toy_graph()
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    router._D[:] = 0.0
+
+    with pytest.raises(PhysarumDegenerateSolve):
+        router.step()
+
+
+def test_degenerate_solve_is_recorded_as_a_failed_run():
+    """End to end: the exception becomes a recorded failure, never a silent
+    `failed=False` row with a fallback-derived stretch."""
+    from bioroute.algorithms.physarum import PhysarumDegenerateSolve
+    from bioroute.metrics.collectors import run_and_collect
+
+    # Phase 6's schema requires integer node ids, so this is the toy graph
+    # relabelled A..E -> 1..5.
+    G = nx.relabel_nodes(_toy_graph(), {c: i for i, c in enumerate("ABCDE", start=1)})
+    snap = _toy_snapshot(G)
+
+    class _AlwaysDegenerate(PhysarumRouter):
+        def step(self):
+            raise PhysarumDegenerateSolve("forced degeneracy for the test")
+
+    record = run_and_collect(
+        _AlwaysDegenerate(PHYSARUM_CONFIG_PATH),
+        G,
+        1,
+        5,
+        snap,
+        budget=5,
+        seed=0,
+        algorithm="physarum",
+    )
+    assert record.failed is True
+    assert "PhysarumDegenerateSolve" in record.failure_reason
+    assert record.stretch is None
+
+
+def test_unreachable_target_is_a_recorded_failure_not_a_singular_solve():
+    """If the target itself is stranded there is no pressure field to solve
+    for; that must be a stated failure, not a singular matrix."""
+    from bioroute.algorithms.physarum import PhysarumUnreachableTarget
+
+    G = _toy_graph_with_spur(1)
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "F", snap, seed=0)
+    _run(router)
+    with pytest.raises(PhysarumUnreachableTarget):
+        router.apply_disruption([("D", "F", 0), ("F", "D", 0)], warm=True)
+
+
+def test_active_component_is_whole_graph_when_nothing_is_stranded():
+    """The restriction must be a no-op on a connected graph -- this is what
+    makes Phase 5's measurements still valid after the Phase 8a fix."""
+    G = _toy_graph()
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    n_active, n_total = router.active_component()
+    assert n_active == n_total == 5
+    assert router._reduced_n == 4
+    # Severing an interior link leaves every node still reachable.
+    router.apply_disruption([("B", "C", 0), ("C", "B", 0)], warm=True)
+    assert router.active_component() == (5, 5)

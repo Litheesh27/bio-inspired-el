@@ -33,3 +33,37 @@ theta: 0.05           # D threshold for the path-extraction fallback subgraph
 walk_max_steps_factor: 4   # greedy max-flux walk step budget = factor * n_nodes
 
 default_iteration_budget: 300   # used by scripts/tests when no budget is given
+
+# ---------------------------------------------------------------------------
+# PHASE 8A -- no new parameter, but the behaviour it fixed is recorded here
+# because this file is where the model's semantics are documented.
+# ---------------------------------------------------------------------------
+# The per-iteration Laplacian is assembled over the SOURCE'S CONNECTED
+# COMPONENT of the surviving undirected projection, not over every node in the
+# graph. Grounding `p_sink = 0` grounds one component; any node the source
+# cannot reach contributes a row that is exactly zero (an isolated node) or
+# part of an ungrounded floating block, which makes the reduced matrix exactly
+# singular -- `spsolve` then warns and returns all-NaN pressures, D becomes NaN
+# for the rest of the run, and path extraction silently falls through to
+# `full_graph_fallback` (plain Dijkstra) while the run still reports
+# `failed=False` and a plausible stretch.
+#
+# This is not rare. Phase 7 guarantees SOURCE-TARGET connectivity only, and
+# edges are removed while nodes are not, so 82 of the Phase 8 sweep's 360
+# disrupted cells (22.8%) strand at least one node: S1 0/60, S2 0/60,
+# S3 2/60, S4 2/60, S5 18/60, S6 60/60. S6 ("intersection closure") isolates
+# the closed node by construction and degenerated on 100% of its cells, on the
+# FIRST post-disruption iteration.
+#
+# An epsilon floor on D was REJECTED as the fix: it would remove the
+# singularity by giving severed roads a nonzero conductance, i.e. by inventing
+# transport capacity across a closed intersection. The component restriction is
+# instead the physically correct model -- Physarum cannot flow into a region it
+# cannot reach, so the pressure field there is genuinely undefined, which is
+# precisely what the singularity was reporting. Hence there is no
+# `d_floor`-style knob here, deliberately.
+#
+# A solve that is still degenerate after the restriction raises
+# `PhysarumDegenerateSolve` and Phase 6 records the run as `failed=True`. It is
+# never warned-and-continued: CLAUDE.md requires failures to be recorded, and a
+# degenerate solve's pressures are meaningless and must never be scored.

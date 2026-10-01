@@ -53,7 +53,65 @@ Each iteration:
     the sink's row/column is dropped entirely before assembly (never merely
     zeroed-and-reinserted after the fact), the reduced system is solved with
     ``scipy.sparse.linalg.spsolve`` on CSR, and ``p_sink = 0`` is reinserted
-    afterward.
+    afterward. The system is assembled over the SOURCE'S CONNECTED COMPONENT
+    only -- see ACTIVE COMPONENT below; grounding one node grounds one
+    component, so a graph with several components needs the restriction to be
+    well-posed at all.
+
+ACTIVE COMPONENT (Phase 8a) -- why the Laplacian is not built over every node
+----------------------------------------------------------------------------
+``p_sink = 0`` grounds exactly ONE component. Any node the source cannot
+reach through surviving tubes contributes a row that is either exactly zero
+(an isolated node) or part of an ungrounded floating block whose rows sum to
+zero -- in both cases the reduced matrix is EXACTLY SINGULAR, ``spsolve``
+emits ``MatrixRankWarning`` and returns all-NaN pressures, and from then on
+``Q``, ``D`` and every pressure in the run are NaN forever.
+
+This is not a hypothetical. Phase 7's disruption scenarios guarantee only
+that SOURCE and TARGET stay connected, never that the whole graph does, and
+nodes are never deleted from the graph -- only edges. Measured over the full
+420-cell Phase 8 matrix (360 disrupted cells), 82 of them (22.8%) strand at
+least one node:
+
+    S1  0/60   S2  0/60   S3  2/60   S4  2/60   S5 18/60   S6 60/60
+
+``S6`` ("intersection closure") removes every edge incident to one path node,
+so it isolates that node BY CONSTRUCTION and degenerates on 100% of its
+cells, on the FIRST post-disruption iteration. ``S3``/``S4``/``S5`` instead
+strand whole 2-8 node components with live internal tubes. Before the fix,
+the NaN pressures silently fell through path extraction to
+``full_graph_fallback`` (plain Dijkstra), so these runs were scored, were not
+recorded as failed, and reported a plausible stretch computed from a path the
+model had no part in choosing.
+
+Treatment: the per-iteration system is assembled over the connected component
+of the source in the undirected projection of the *surviving* graph, and only
+over tubes with both endpoints inside it. This is the mathematically right
+model, not a numerical patch -- Physarum is a physical transport medium and
+cannot flow into a region it cannot reach, so the pressure field there is
+genuinely undefined (any constant satisfies the equations, which is exactly
+what the singularity was reporting). Pressures outside the component are
+reported as 0 and their tubes carry ``Q = 0``, so they atrophy under the
+normal adaptation rule. Extraction can never walk into them: a directed edge
+out of the component would imply an undirected edge out of it. On an
+undisrupted, connected graph the active component is the whole graph and the
+assembled matrix is bit-for-bit what it was before, so Phase 5's numbers are
+unchanged.
+
+The alternative of flooring ``D`` at an epsilon was rejected: it would make
+the matrix nonsingular by giving *severed* roads a nonzero conductance,
+letting flux leak across a closed intersection -- a model change that
+invents transport capacity where the scenario says there is none.
+
+Deliberately NOT silenced: ``_solve_pressures`` turns ``MatrixRankWarning``
+into a raised ``PhysarumDegenerateSolve`` and additionally rejects any
+non-finite pressure vector. If a solve still degenerates for some reason the
+component restriction does not cover, it propagates out of ``step()`` and
+Phase 6's collector records the run as ``failed=True`` with that reason
+(CLAUDE.md: failures are recorded, never silently dropped). A numerically
+degenerate solve must never be scored -- and one case measured during Phase
+8a returned p=0 on the stranded block WITHOUT warning, so warning detection
+alone was never going to be a sufficient fix.
  2. Flux ``Q_i = w_i * (p_u - p_v)`` (sign convention: positive means flow
     from ``u`` to ``v`` in the edge's stored orientation).
  3. Adapt ``D_i <- D_i + dt * (f(|Q_i|) - D_i)``, ``f(Q) = |Q|^mu / (1 +
@@ -122,6 +180,7 @@ flow.
 from __future__ import annotations
 
 import time
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -141,6 +200,27 @@ def load_physarum_config(path: str | Path = DEFAULT_CONFIG_PATH) -> dict[str, An
     """Load configs/physarum.yaml into a plain dict."""
     with Path(path).open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+class PhysarumDegenerateSolve(RuntimeError):
+    """The per-iteration Laplacian solve was numerically degenerate.
+
+    Raised (never swallowed, never warned-and-continued) when ``spsolve``
+    reports a singular matrix or returns a non-finite pressure, so that the
+    run surfaces as ``failed=True`` with a stated reason instead of being
+    absorbed by the path-extraction fallback and silently scored. See the
+    module docstring's ACTIVE COMPONENT section for the degeneracy Phase 8a
+    diagnosed and removed; this exception is the backstop for anything it
+    does not cover.
+    """
+
+
+class PhysarumUnreachableTarget(PhysarumDegenerateSolve):
+    """The target is not in the source's connected component of the surviving
+    undirected projection, so there is no pressure field that can describe
+    flow between them. Phase 7 guarantees this cannot happen in the sweep
+    (and Phase 6 checks the post-disruption Dijkstra reference before the
+    recovery solve), so it is a recorded failure rather than a silent one."""
 
 
 def _pair_key(u: int, v: int) -> tuple[int, int]:
@@ -200,6 +280,13 @@ class PhysarumRouter(Router):
 
         p = self._solve_pressures(w)
         Q = w * (p[self._edge_u] - p[self._edge_v])
+        # Tubes outside the source's active component carry no flow. Their
+        # endpoints are both at p = 0 so this is already arithmetically true;
+        # it is stated explicitly so `last_flux_by_node`'s Kirchhoff check
+        # stays exact and so no future change to the pressure reporting can
+        # quietly leak flux into an unreachable region.
+        if not self._all_active:
+            Q = np.where(self._active_edge, Q, 0.0)
 
         if self._variant == "tero":
             absQ = np.abs(Q)
@@ -270,9 +357,16 @@ class PhysarumRouter(Router):
                 u, v = pair
                 if not (self._G.has_edge(u, v) or self._G.has_edge(v, u)):
                     self._D[i] = 0.0
+            # Warm does NOT rebuild the model -- that is the whole point --
+            # but the closure can still have stranded a component (Phase 8a:
+            # 82 of the sweep's 360 disrupted cells do), and an ungrounded
+            # component makes the reduced Laplacian exactly singular. The
+            # active-component structure must therefore be recomputed here.
+            self._refresh_active_component()
         else:
             # Cold start: rebuild the model from scratch on the
             # post-disruption graph (equivalent to a fresh prepare()).
+            # `_build_model` refreshes the active component itself.
             self._build_model(self._G)
 
         self._reset_run_state()
@@ -315,6 +409,13 @@ class PhysarumRouter(Router):
 
     def last_extraction_method(self) -> str | None:
         return self._last_method
+
+    def active_component(self) -> tuple[int, int]:
+        """``(active_nodes, total_nodes)`` for the component the Laplacian is
+        currently assembled over. Equal on an undisrupted connected graph;
+        after a closure that strands a region they differ, and the difference
+        is exactly the degeneracy Phase 8a removed."""
+        return int(self._active_node.sum()), len(self._nodes)
 
     def last_flux_by_node(self) -> dict[int, float]:
         """Net flux at every node after the most recent step() call: sum of
@@ -367,32 +468,96 @@ class PhysarumRouter(Router):
         self._L = L
         self._D = np.full(m, self._D_init, dtype=np.float64)
 
-        sink_idx = self._node_idx[self._target]
+        self._sink_idx = self._node_idx[self._target]
+        self._refresh_active_component()
+
+        max_steps = max(4, int(self._walk_factor * max(n, 1)))
+        self._walk_max_steps = max_steps
+
+    def _refresh_active_component(self) -> None:
+        """Recompute the sparsity structure of the reduced Laplacian over the
+        source's connected component of the SURVIVING undirected projection.
+
+        Called from `_build_model` and again after every `apply_disruption`
+        (warm included -- warm does not rebuild the model, but a closure can
+        still strand a component, which is exactly the Phase 8a bug). The
+        component is derived from the GRAPH's surviving edges, never from the
+        magnitude of `D`: deciding membership from conductivities would make
+        the matrix's structure drift as tubes atrophy, and `D` under the Tero
+        rule decays towards zero without ever reaching it.
+
+        On a connected, undisrupted graph every node is active and the
+        assembled matrix (including the row ordering of the reduced index) is
+        identical to the pre-Phase-8a one, so Phase 5's measurements stand.
+        """
+        G = self._G
+        pairs = self._pairs
+        n = len(self._nodes)
+        edge_u, edge_v = self._edge_u, self._edge_v
+
+        # A tube is LIVE iff at least one directed edge still joins its
+        # endpoints. In cold mode `_build_model` already rebuilt `pairs` from
+        # the disrupted graph so every pair is live; in warm mode `pairs` is
+        # the pre-disruption set and this is what drops the severed tubes.
+        live = np.fromiter(
+            (G.has_edge(u, v) or G.has_edge(v, u) for (u, v) in pairs),
+            dtype=bool,
+            count=len(pairs),
+        )
+
+        adjacency: list[list[int]] = [[] for _ in range(n)]
+        for i in np.nonzero(live)[0]:
+            a = int(edge_u[i])
+            b = int(edge_v[i])
+            adjacency[a].append(b)
+            adjacency[b].append(a)
+
         source_idx = self._node_idx[self._source]
+        active = np.zeros(n, dtype=bool)
+        active[source_idx] = True
+        stack = [source_idx]
+        while stack:
+            x = stack.pop()
+            for y in adjacency[x]:
+                if not active[y]:
+                    active[y] = True
+                    stack.append(y)
+
+        sink_idx = self._sink_idx
+        if not active[sink_idx]:
+            raise PhysarumUnreachableTarget(
+                f"target {self._target} is not in source {self._source}'s "
+                "connected component of the surviving undirected projection "
+                f"({int(active.sum())} of {n} nodes reachable)"
+            )
+
+        self._active_node = active
+        self._all_active = bool(active.all())
+        # Both endpoints of a live tube are in the same component by
+        # definition, so testing one endpoint would suffice; both are tested
+        # so the mask stays correct if the derivation of `live` ever changes.
+        self._active_edge = live & active[edge_u] & active[edge_v]
+
         reduced_index = np.full(n, -1, dtype=np.int64)
-        keep = [idx for idx in range(n) if idx != sink_idx]
+        keep = [idx for idx in range(n) if active[idx] and idx != sink_idx]
         reduced_index[keep] = np.arange(len(keep))
         self._reduced_index = reduced_index
         self._reduced_n = len(keep)
         self._orig_of_reduced = np.array(keep, dtype=np.int64)
         self._source_reduced = int(reduced_index[source_idx])
-        self._sink_idx = sink_idx
 
         # Precompute the fixed sparsity structure used to assemble the
         # reduced Laplacian every iteration (only the `data` array changes
-        # as conductivities adapt): diagonal contributions from every edge
-        # touching a kept (non-sink) node, off-diagonal contributions only
-        # from edges where BOTH endpoints are kept.
+        # as conductivities adapt): diagonal contributions from every active
+        # tube touching a kept (active, non-sink) node, off-diagonal
+        # contributions only from active tubes where BOTH endpoints are kept.
         ra = reduced_index[edge_u]
         rb = reduced_index[edge_v]
         self._ra = ra
         self._rb = rb
-        self._mask_a = ra != -1
-        self._mask_b = rb != -1
+        self._mask_a = self._active_edge & (ra != -1)
+        self._mask_b = self._active_edge & (rb != -1)
         self._mask_both = self._mask_a & self._mask_b
-
-        max_steps = max(4, int(self._walk_factor * max(n, 1)))
-        self._walk_max_steps = max_steps
 
     def _reset_run_state(self) -> None:
         self._iteration = 0
@@ -424,8 +589,31 @@ class PhysarumRouter(Router):
         b[self._source_reduced] = self._I0
 
         t0 = time.perf_counter()
-        p_reduced = spla.spsolve(L_reduced, b)
+        # `spsolve` reports an exactly-singular matrix as a WARNING and hands
+        # back all-NaN pressures. Warning-and-continuing is what let the
+        # Phase 8a degeneracy be absorbed by the extraction fallback and
+        # scored as a healthy run, so the warning is promoted to an exception
+        # here and the result is additionally checked for finiteness (one
+        # measured degenerate case returned zeros without warning at all).
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", spla.MatrixRankWarning)
+            try:
+                p_reduced = spla.spsolve(L_reduced, b)
+            except spla.MatrixRankWarning as exc:
+                raise PhysarumDegenerateSolve(
+                    f"singular Laplacian at iteration {self._iteration} "
+                    f"(reduced system {n_r}x{n_r}, "
+                    f"{int(self._active_node.sum())} active nodes, "
+                    f"{int(self._active_edge.sum())} active tubes): {exc}"
+                ) from exc
         self._solve_times.append(time.perf_counter() - t0)
+
+        if not np.all(np.isfinite(p_reduced)):
+            n_bad = int((~np.isfinite(p_reduced)).sum())
+            raise PhysarumDegenerateSolve(
+                f"non-finite pressure at iteration {self._iteration}: "
+                f"{n_bad} of {n_r} reduced nodes are NaN or inf"
+            )
 
         p_full = np.zeros(len(self._nodes), dtype=np.float64)
         p_full[self._orig_of_reduced] = p_reduced

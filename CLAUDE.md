@@ -241,18 +241,62 @@ that file has the detail.
       a DIFFERENT hash and a FileNotFoundError whose message wrongly suggests
       re-running `scripts/02_run_sumo.py`. Use `netconvert_flags_for(cfg)` from
       `experiments/runner.py`, or read the flags from `configs/sumo.yaml`.
-- [ ] Phase 8a — BLOCKER before the full sweep: Physarum emits
-      `MatrixRankWarning: Matrix is exactly singular` from `physarum.py:427`
-      (`spla.spsolve(L_reduced, b)`) on roughly 6 of 30 smoke solves, and falls
-      back to `full_graph_fallback` extraction on 21 of 30. The runs are NOT
-      recorded as failed and their stretches look sane (1.0-1.52), so the
-      degeneracy is being absorbed by the extraction fallback rather than
-      surfaced. A singular solve means that iteration's pressures are garbage.
-      Likely cause: conductivities decaying to ~0 leave a node with no
-      non-negligible incident D, zeroing its Laplacian row. Investigate before
-      committing 2.4 h of compute to results that lean on a fallback path.
-      NOTE: smoke's `converged: False` on every ACO/Physarum row is NOT this
-      bug — smoke overrides `iteration_budget` to 60, below the tuned 150/300.
+- [x] Phase 8a — Physarum singular-Laplacian degeneracy: diagnosed, fixed.
+      **THE SWEEP IS UNBLOCKED.** Mechanism was STRANDED COMPONENTS, not
+      conductivity decay: `p_sink = 0` grounds exactly ONE component, Phase 7
+      guarantees only source-target connectivity, and closures remove edges
+      while never removing nodes — so an unreachable node gives an exactly-zero
+      Laplacian row (isolated) or an ungrounded floating block (rows sum to
+      zero). `spsolve` then returns ALL-NaN pressures which propagate into Q
+      and D for the rest of the run. Confirmed structural, not decay:
+      `first_singular_iter == 1` on all 12 affected solves.
+      Census over all 360 disrupted cells — **82 (22.8%) strand nodes**:
+      S1 0/60, S2 0/60, S3 2/60, S4 2/60, S5 18/60, **S6 60/60**. S6
+      ("intersection closure") removes every edge incident to a path node, so
+      it isolates that node BY CONSTRUCTION and degenerated on 100% of cells.
+      **WHY THIS MATTERED MORE THAN THE WARNING SUGGESTED:** NaN pressures make
+      every `flux > best_flux` comparison False (walk dead-ends) and every
+      `D > theta` False (theta subgraph empty), so extraction fell through to
+      `full_graph_fallback` = plain Dijkstra. Physarum was reporting DIJKSTRA'S
+      OWN PATH as its own, with `failed=False`. S6 `post_disruption_stretch` was
+      mean 1.000 / max 1.000 on all 12 rows — **fabricated perfection on exactly
+      the scenario where Physarum is worst.** Post-fix: mean 1.181 / max 2.044.
+      Fix: `_refresh_active_component()` restricts the Laplacian to the source's
+      connected component in the undirected projection of the SURVIVING graph.
+      Membership derives from surviving edges, never from D magnitudes, so
+      sparsity cannot drift as tubes atrophy. Called from `_build_model` AND
+      explicitly from the warm branch of `apply_disruption` — warm deliberately
+      does not rebuild the model, which is exactly where the bug lived.
+      This is the model, not a patch: Physarum cannot flow where it cannot
+      reach, so the pressure field there is genuinely undefined (any constant
+      satisfies the equations) — which is what the singularity was reporting.
+      **An epsilon floor on D was REJECTED**: it would give SEVERED roads a
+      nonzero conductance, inventing transport capacity across a closed
+      intersection. No `d_floor` knob exists, deliberately; reasoning is in
+      `configs/physarum.yaml`.
+      Backstop retained: `PhysarumDegenerateSolve` promotes scipy's warning to a
+      raised error AND rejects any non-finite pressure vector (needed — one
+      measured case degenerated WITHOUT warning, so warning-detection alone was
+      never sufficient). `PhysarumUnreachableTarget` covers a stranded target.
+      Phase 6 records these as `failed=True`. Nothing is warned-and-continued.
+      Phase 5's exit criterion is UNCHANGED at 26/30 (87%) — the undisrupted
+      solve is bit-identical, so no correctness-for-stability trade.
+      Singular solves 12/54 -> 0/54. `full_graph_fallback` 21/30 -> 13/30:
+      12 were bug-caused (all S6), 9 are independent (3x S0, 6x S1) and
+      bit-identical after the fix — that residual is Phase 5's genuine bimodal
+      behaviour, confirmed identical at budget 300 as at 60.
+- [ ] Phase 8b — CAVEAT found in Phase 8a, reported not fixed. Physarum's
+      `best_cost` is a min over ALL iterations AND ALL extraction methods, so on
+      3 of 6 undisrupted pairs the path that set `best_cost` came from a
+      FALLBACK (2x `full_graph_fallback` = plain Dijkstra, 1x
+      `theta_subgraph_fallback`) even though the max-flux walk succeeded on
+      34-56 iterations. Also, the recorded `extraction_method` is the LAST
+      iteration's method, which disagreed with the method that produced
+      `best_path` on 1 of 6. Consequence: **a Physarum stretch of 1.0 can mean
+      "Dijkstra's answer, obtained via the fallback"** even on undisrupted
+      cells. This is Phase 5 design and is honestly recorded, but it needs a
+      Phase 9 reporting caveat and arguably a `best_path_extraction_method`
+      field so fallback-derived wins are separable from genuine flux-walk wins.
 - [ ] Phase 9 — Analysis, figures, and results dashboard (7 figures + published Artifact dashboard)
 
 ## Repo layout
