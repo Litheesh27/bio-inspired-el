@@ -221,7 +221,38 @@ that file has the detail.
          is weight-dependent.
       A test asserts ZERO of 60 real-graph disruptions leave the optimal path
       unchanged — the null-result trap this phase exists to avoid.
-- [ ] Phase 8 — Experiment matrix and runner (full sweep, failed rate < 5%, resumable)
+- [~] Phase 8 — Runner BUILT and verified; THE FULL SWEEP HAS NOT BEEN RUN.
+      Matrix: **420 cells, 5,520 runs** (aco 3,900 / physarum 780 / dijkstra 420
+      / astar 420) over 7 scenarios x {sumo light, sumo heavy} x {warm, cold},
+      `sumo_speeds` baseline. 30 OD pairs, draw seed 8080, stratified 10/10/10
+      by straight-line distance, **verified zero overlap** with the ACO tuning
+      draw (2024) and the Phase 4d criterion draw (4242).
+      Projected **34.2 h serial, ~2.4 h at 14 workers** (lower bound, perfect
+      scaling assumed — never quote it as a performance figure).
+      Seeds per algorithm: aco 5, physarum 1, classical 1. **Physarum's single
+      seed is MEASURED, not assumed** — 5 OD pairs x 3 initialisation seeds gave
+      costs identical to 4 d.p. (0/5 varied), because conductivities initialise
+      from a fixed value. Classical routers get cold-only, since a one-shot
+      router has no warm mode and the duplicate rows would be meaningless.
+      Verified: `--smoke` 18 cells / 126 runs / 0 failed; `--resume` found all
+      126 run_ids on disk and skipped them, 0 cells remaining.
+      GOTCHA: `load_baseline_graph(cfg, baseline="sumo_speeds")` computes the
+      hash from `netconvert_flags`, so calling it with the default `None` yields
+      a DIFFERENT hash and a FileNotFoundError whose message wrongly suggests
+      re-running `scripts/02_run_sumo.py`. Use `netconvert_flags_for(cfg)` from
+      `experiments/runner.py`, or read the flags from `configs/sumo.yaml`.
+- [ ] Phase 8a — BLOCKER before the full sweep: Physarum emits
+      `MatrixRankWarning: Matrix is exactly singular` from `physarum.py:427`
+      (`spla.spsolve(L_reduced, b)`) on roughly 6 of 30 smoke solves, and falls
+      back to `full_graph_fallback` extraction on 21 of 30. The runs are NOT
+      recorded as failed and their stretches look sane (1.0-1.52), so the
+      degeneracy is being absorbed by the extraction fallback rather than
+      surfaced. A singular solve means that iteration's pressures are garbage.
+      Likely cause: conductivities decaying to ~0 leave a node with no
+      non-negligible incident D, zeroing its Laplacian row. Investigate before
+      committing 2.4 h of compute to results that lean on a fallback path.
+      NOTE: smoke's `converged: False` on every ACO/Physarum row is NOT this
+      bug — smoke overrides `iteration_budget` to 60, below the tuned 150/300.
 - [ ] Phase 9 — Analysis, figures, and results dashboard (7 figures + published Artifact dashboard)
 
 ## Repo layout

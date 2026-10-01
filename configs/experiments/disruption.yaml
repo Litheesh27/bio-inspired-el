@@ -1,0 +1,170 @@
+# Phase 8 -- THE full experiment matrix (disruption sweep).
+#
+# This is the file the project's headline results come from:
+#   30 OD pairs x 7 scenarios (S0-S6) x 2 traffic levels x 4 routers
+#   x {warm, cold} where it means anything x per-algorithm seeds.
+#
+# Everything that can change a NUMBER lives in this file and is folded into
+# the experiment config hash, which is stamped on every result row and into
+# every run_id -- so editing any of it invalidates resume rather than
+# silently mixing two definitions into one Parquet file (CLAUDE.md: cached
+# artifacts are keyed by a config hash).
+#
+# Run:
+#   .venv/Scripts/python.exe scripts/03_run_experiments.py --dry-run
+#   .venv/Scripts/python.exe scripts/03_run_experiments.py --smoke
+#   .venv/Scripts/python.exe scripts/03_run_experiments.py \
+#       --config configs/experiments/disruption.yaml --workers 14 --resume
+
+name: disruption
+
+area_config: configs/area_central_blr.yaml
+
+# PHASE 2D DEFAULT. `sumo_speeds` is the shared free-flow baseline every
+# SUMO/BPR ratio in this project is measured against. It is ALSO the only
+# baseline on which A*'s great-circle heuristic is admissible for SUMO
+# snapshots -- on `config_speeds`, 242 edges carry a SUMO travel time below
+# the config-speed free-flow time, so A* would report sub-optimal paths as
+# optimal. `matrix.validate_config` REFUSES that combination.
+baseline_graph: sumo_speeds
+
+# ---------------------------------------------------------------------------
+# Traffic conditions -- the "2 traffic levels" axis.
+# ---------------------------------------------------------------------------
+# SUMO is the locked-in primary congestion source (CLAUDE.md), and Phase 2d
+# recalibrated both levels against the one shared denominator (1.81x light /
+# 2.11x heavy on OD paths). SUMOProvider aggregates over the whole
+# simulation, so its only valid time_bin is 0.
+#
+# BPR and freeflow conditions can be added here verbatim and need no code
+# change -- e.g.
+#   - {congestion_source: bpr, level: heavy, time_bin: 1}
+#   - {congestion_source: freeflow, level: freeflow, time_bin: 0}
+# -- but note CLAUDE.md Phase 2d: BPR and SUMO BRACKET rather than agree,
+# and must not be merged into one "congestion level".
+conditions:
+  - {congestion_source: sumo, level: light, time_bin: 0}
+  - {congestion_source: sumo, level: heavy, time_bin: 0}
+
+scenarios: [S0, S1, S2, S3, S4, S5, S6]
+
+# ---------------------------------------------------------------------------
+# Algorithms, seed counts and iteration budgets.
+# ---------------------------------------------------------------------------
+# `kind: classical` means "no internal adaptation state": one seed, and no
+# warm/cold duplication (see matrix.py's module docstring). Budgets live
+# here, never in code.
+algorithms:
+  # One-shot exact baseline. This is also the stretch denominator, so it is
+  # measured as a row too -- its wall-clock is the honest comparison point
+  # CLAUDE.md insists on reporting.
+  - name: dijkstra
+    kind: classical
+    seeds: 1
+    budget: 1
+
+  # A* on the same snapshot. Admissible only on `sumo_speeds` (see above).
+  - name: astar
+    kind: classical
+    seeds: 1
+    budget: 1
+
+  # ACO (MMAS), headline purely-local mode as shipped in configs/aco.yaml
+  # (`use_goal_heuristic: false`). 5 seeds: Phase 4d measured one OD pair
+  # giving {1.000, 1.000, 1.000, 1.233, 1.446} across seeds, and showed a
+  # single-seed run of the exit criterion could honestly have reported
+  # either a pass or a miss. Budget 150 = configs/aco.yaml
+  # `suggested_budget` (Phase 4c: quality is flat beyond ~150).
+  - name: aco
+    kind: iterative
+    seeds: 5
+    seed_start: 0
+    budget: 150
+
+  # Physarum. SEEDS: 1, NOT 3 -- and this is a measured claim, not an
+  # assumption. `PhysarumRouter` stores the seed in `prepare()` and never
+  # reads it again; `D_init` is a uniform constant over every edge and the
+  # module touches no RNG anywhere (`grep -n "random" physarum.py` returns
+  # nothing). Extra seeds would therefore produce byte-identical paths and
+  # differ only in `wallclock_s` -- the same waste CLAUDE.md rules out for
+  # Dijkstra. Change to `seeds: 3` the day initialisation actually varies.
+  # Budget 300 = configs/physarum.yaml `default_iteration_budget`.
+  - name: physarum
+    kind: iterative
+    seeds: 1
+    seed_start: 0
+    budget: 300
+
+# ---------------------------------------------------------------------------
+# OD sample: 30 pairs, stratified 10/10/10 by straight-line distance.
+# ---------------------------------------------------------------------------
+# seed 8080 is a FRESH draw. 2024 (ACO tuning + Phase 4/4b/4c criterion) and
+# 4242 (the Phase 4d held-out criterion) are already spent; `exclude_spent`
+# additionally filters this draw against both of them, ordered AND
+# unordered, so out-of-sampleness is enforced rather than hoped for. The
+# script prints the overlap report at startup.
+od:
+  n_pairs: 30
+  strata: [short, medium, long]
+  seed: 8080
+  pool_size: 4000
+  exclude_spent: true
+
+# ---------------------------------------------------------------------------
+# Disruption.
+# ---------------------------------------------------------------------------
+# ONE scenario seed for the whole sweep, deliberately independent of the
+# algorithm seeds: every algorithm and every algorithm-seed within a cell
+# must face the IDENTICAL closure, or the comparison stops being paired.
+# scenarios.py derives its per-cell RNG from (scenario_seed, scenario_id,
+# source, target), so distinct cells still get distinct closures.
+scenario_seed: 1337
+
+disruption:
+  max_attempts: 50
+  both_directions: true
+  close_parallel_edges: true
+  betweenness_k: 64
+  strict: false
+
+# ---------------------------------------------------------------------------
+# Execution (NOT part of the config hash -- these change how the sweep runs,
+# never what it measures).
+# ---------------------------------------------------------------------------
+output:
+  dir: data/results
+parallel:
+  workers: 14
+  flush_every: 5
+
+# Seconds per SOLVE used by --dry-run's projection. A run is one solve for
+# S0 and two (initial + recovery) for S1-S6. These are planning estimates;
+# `--cost-from <parquet>` replaces them with medians measured from a real
+# (e.g. smoke) run.
+cost_estimate_s_per_solve:
+  dijkstra: 0.05
+  astar: 0.04
+  aco: 16.0
+  physarum: 2.0
+
+# ---------------------------------------------------------------------------
+# --smoke overrides. Deep-merged over everything above, so the smoke sweep
+# is as reproducible and as inspectable as the real one -- and lives in the
+# config rather than in script code.
+# ---------------------------------------------------------------------------
+smoke:
+  name: disruption_smoke
+  scenarios: [S0, S1, S6]
+  conditions:
+    - {congestion_source: sumo, level: heavy, time_bin: 0}
+  # 6, not 5: the sample is stratified across 3 distance bands, so the
+  # pair count must be a multiple of 3 for the strata to stay balanced.
+  od:
+    n_pairs: 6
+  algorithms:
+    - {name: dijkstra, kind: classical, seeds: 1, budget: 1}
+    - {name: astar, kind: classical, seeds: 1, budget: 1}
+    - {name: aco, kind: iterative, seeds: 2, budget: 20}
+    - {name: physarum, kind: iterative, seeds: 1, budget: 60}
+  output:
+    dir: data/results/smoke

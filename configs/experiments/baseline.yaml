@@ -1,0 +1,98 @@
+# Phase 8 -- the ROUTING-QUALITY baseline sweep (S0 only, no disruption).
+#
+# Same OD sample, same traffic conditions, same algorithms and budgets as
+# configs/experiments/disruption.yaml, with the disruption axis removed. It
+# exists so routing quality can be measured and re-measured cheaply without
+# paying for the recovery half of every run (a disruption row costs roughly
+# two solves, an S0 row one), and so a change to the scenario machinery can
+# never perturb the control numbers.
+#
+# It is a STRICT SUBSET of the disruption sweep in content, but NOT in
+# run_id: the config hash differs (different `scenarios` list), so its rows
+# land in their own Parquet file and resume never mixes the two. That is the
+# intended behaviour -- two configs, two bodies of evidence.
+#
+# Run:
+#   .venv/Scripts/python.exe scripts/03_run_experiments.py \
+#       --config configs/experiments/baseline.yaml --workers 14 --resume
+
+name: baseline
+
+area_config: configs/area_central_blr.yaml
+baseline_graph: sumo_speeds
+
+conditions:
+  - {congestion_source: sumo, level: light, time_bin: 0}
+  - {congestion_source: sumo, level: heavy, time_bin: 0}
+
+# The no-disruption control only. With no closure there is no warm/cold
+# axis for anyone, so every row here is cold-start by construction.
+scenarios: [S0]
+
+algorithms:
+  - name: dijkstra
+    kind: classical
+    seeds: 1
+    budget: 1
+  - name: astar
+    kind: classical
+    seeds: 1
+    budget: 1
+  - name: aco
+    kind: iterative
+    seeds: 5
+    seed_start: 0
+    budget: 150
+  # See configs/experiments/disruption.yaml for why Physarum gets 1 seed
+  # and not 3: the Phase 5 router reads no RNG, so extra seeds would be
+  # byte-identical rows.
+  - name: physarum
+    kind: iterative
+    seeds: 1
+    seed_start: 0
+    budget: 300
+
+od:
+  n_pairs: 30
+  strata: [short, medium, long]
+  seed: 8080
+  pool_size: 4000
+  exclude_spent: true
+
+# Unused for an S0-only sweep (nothing is ever severed), kept so the two
+# configs stay structurally identical and diffable.
+scenario_seed: 1337
+disruption:
+  max_attempts: 50
+  both_directions: true
+  close_parallel_edges: true
+  betweenness_k: 64
+  strict: false
+
+output:
+  dir: data/results
+parallel:
+  workers: 14
+  flush_every: 5
+
+cost_estimate_s_per_solve:
+  dijkstra: 0.05
+  astar: 0.04
+  aco: 16.0
+  physarum: 2.0
+
+smoke:
+  name: baseline_smoke
+  # 6, not 5: the sample is stratified across 3 distance bands, so the pair
+  # count must be a multiple of 3 for the strata to stay balanced.
+  od:
+    n_pairs: 6
+  conditions:
+    - {congestion_source: sumo, level: heavy, time_bin: 0}
+  algorithms:
+    - {name: dijkstra, kind: classical, seeds: 1, budget: 1}
+    - {name: astar, kind: classical, seeds: 1, budget: 1}
+    - {name: aco, kind: iterative, seeds: 2, budget: 20}
+    - {name: physarum, kind: iterative, seeds: 1, budget: 60}
+  output:
+    dir: data/results/smoke
