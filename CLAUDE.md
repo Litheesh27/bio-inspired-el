@@ -168,8 +168,59 @@ that file has the detail.
       always directed-valid in the original MultiDiGraph. Convergence uses
       max|dD| < eps ONLY — path-stability fired early on wrong paths because
       D decays in near-lockstep across edges early on. ~3-8 ms per solve.
-- [ ] Phase 6 — Metrics and measurement harness (Parquet schema, no nulls in required columns)
-- [ ] Phase 7 — Disruption scenarios S0-S6 (reproducible under fixed seed, connectivity preserved)
+- [x] Phase 6 — Metrics harness. 33-column `ResultRecord` + explicit pyarrow
+      schema, three nullability tiers enforced by `validate()` before every
+      append AND mirrored as `nullable=False` in Arrow. Entry point for Phase 8:
+      `run_and_collect(router, G, source, target, snapshot, scenario, budget,
+      warm, seed, ...)`, which accepts precomputed `reference_cost` /
+      `disrupted_reference_cost` / `G_disrupted` so all three algorithms in one
+      matrix cell share ONE Dijkstra denominator. `make_run_id(...)` is the
+      deterministic resume key. Only `SchemaViolation` escapes — that means a
+      malformed record and must stop the sweep; every run-level problem returns
+      a `failed=True` row instead.
+      TWO first-valid-path columns, not one: the recovery-group version is null
+      for S0, so `initial_time_to_first_valid_path_iters` keeps that measurement
+      on the control rows. `iteration_budget` and `recovery_converged` are
+      recorded because `iterations` alone cannot distinguish converged-early
+      from burned-the-budget — which matters: Phase 4d found MMAS's convergence
+      fires on only 79%/69% of solves.
+      Parquet: ONE SHARD PER WORKER by construction + `merge_shards`, with the
+      Phase 4d atomic-write discipline (unique temp, fsync, backoff retry, read
+      side retried too). `merge_shards` RAISES on an unreadable shard rather
+      than silently dropping evidence. The concurrency test was verified to have
+      teeth: the same contention against a reconstructed pre-Phase-4d writer
+      crashed 5 of 6 writers; against the shipped path, 0 of 6.
+- [x] Phase 7 — Disruption scenarios S0-S6. `generate_disruption(...) ->
+      Disruption(scenario_id, removed_edges, ok, rejections, attempts, reason,
+      meta)`. Seeds derived via **sha256, NOT builtin `hash()`** — `hash()` on
+      strings is randomized per process by PYTHONHASHSEED, which would have made
+      Phase 8 silently irreproducible across workers. Pinned by a test.
+      Semantics (documented choices, not accidents): closure unit is the ordered
+      node pair and ALL parallel edges on it close; the reverse direction closes
+      too (`both_directions=True`), so an S1-S4 removed edge is on the path OR is
+      the reverse of a path edge; S5 closes ONE chosen way from the seed edge's
+      `osmid` list, not the union — the union would close 2-4 unrelated corridors
+      and make S5's severity depend on how OSMnx happened to simplify.
+      `apply_disruption` returns `nx.restricted_view` by default: O(1) and
+      STRUCTURALLY incapable of mutating the base graph, 20x cheaper than
+      `G.copy()` (78 ms each here). Caveat: a view shares the base's edge
+      ATTRIBUTE dicts, so a caller wanting to write attributes must pass
+      `copy=True`. Nothing here does — algorithms read weights from the snapshot.
+      **FRAGILITY RESULT (paper-worthy, 4,200 generations, 0 infeasible).**
+      Rejection rate = candidate closures discarded for disconnecting s-t:
+        S1 2.6% | S2 1.0% | S3 14.5% | S4 31.7% | S5 7.4% | S6 4.5%  (freeflow)
+      1. The network is NOT fragile to single closures — only ~1 path edge in 40
+         is a cut edge for its own OD pair, as a dense irregular grid should be.
+      2. Fragility is SUPER-ADDITIVE in simultaneous closures: 1->3->5 edges
+         gives 2.6% -> 14.5% -> 31.7%, far faster than 3x and 5x.
+      3. A whole CORRIDOR is safer than 5 scattered edges (S5 7.4% at a median 4
+         and up to 60 edges, vs S4 31.7% at 7). Corridor edges are consecutive,
+         so one detour routes around all of them.
+      4. Congestion barely moves any of it (within ~1pp), as expected —
+         connectivity is topological. S2 is the exception because its selection
+         is weight-dependent.
+      A test asserts ZERO of 60 real-graph disruptions leave the optimal path
+      unchanged — the null-result trap this phase exists to avoid.
 - [ ] Phase 8 — Experiment matrix and runner (full sweep, failed rate < 5%, resumable)
 - [ ] Phase 9 — Analysis, figures, and results dashboard (7 figures + published Artifact dashboard)
 
