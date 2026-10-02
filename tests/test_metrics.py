@@ -681,6 +681,324 @@ def test_run_and_collect_populates_best_path_extraction_method_for_physarum():
 
 
 # ==========================================================================
+# PHASE 8D: the walk's own cost, carried in the sweep's own rows
+#
+# `best_path_extraction_method` says WHERE the reported path came from but
+# not HOW GOOD Physarum's own extraction was, and it under-states the walk
+# (the fallbacks are Dijkstra-exact and fire early; `cost < best_cost` is
+# strict, so afterwards the walk can only tie, and a tie scores as a loss).
+# Phase 8c measured the unaided max-flux walk hitting the optimum on
+# 36.7-46.7% of pairs under freeflow and 3.3-16.7% under BPR heavy against a
+# pooled 83-87% -- but on the `config_speeds` graph, while the sweep runs
+# SUMO on `sumo_speeds`. These four columns put the walk-only measurement in
+# the same rows as the headline figure, so the caveat and the claim can never
+# come from different graphs.
+# ==========================================================================
+
+
+class WalkAwareStub(StubRouter):
+    """A `StubRouter` that also exposes Phase 8c's walk-only accessors with
+    scripted values, so the plumbing is testable without depending on
+    Physarum's numerics.
+
+    Crucially it mirrors the real tracker's RESET on `apply_disruption`: the
+    values a post-recovery read returns describe the recovery only, which is
+    exactly the trap the initial-solve columns have to avoid.
+    """
+
+    name = "walkstub"
+
+    def __init__(
+        self,
+        script,
+        recovery_script=None,
+        walk=(None, 0),
+        recovery_walk=(None, 0),
+    ):
+        super().__init__(script, recovery_script)
+        self._walk = walk
+        self._recovery_walk = recovery_walk
+        self._walk_phase = "initial"
+
+    def apply_disruption(self, removed_edges, warm: bool) -> None:
+        super().apply_disruption(removed_edges, warm)
+        self._walk_phase = "recovery"
+
+    def _walk_now(self):
+        return self._walk if self._walk_phase == "initial" else self._recovery_walk
+
+    def walk_best_cost(self):
+        return self._walk_now()[0]
+
+    def walk_success_count(self):
+        return self._walk_now()[1]
+
+
+def test_walk_columns_are_nullable_diagnostics_and_default_to_null():
+    assert S.WALK_FIELDS == (
+        "walk_best_cost",
+        "walk_best_stretch",
+        "walk_success_count",
+        "post_disruption_walk_stretch",
+    )
+    for name in S.WALK_FIELDS:
+        assert name in S.DIAGNOSTIC_FIELDS
+        assert S.RESULT_SCHEMA.field(name).nullable, name
+    assert S.RESULT_SCHEMA.field("walk_best_cost").type == pa.float64()
+    assert S.RESULT_SCHEMA.field("walk_best_stretch").type == pa.float64()
+    assert S.RESULT_SCHEMA.field("walk_success_count").type == pa.int64()
+    assert S.RESULT_SCHEMA.field("post_disruption_walk_stretch").type == pa.float64()
+
+    # ACO and the classical routers have no separable extraction step, so
+    # they leave all four null -- and such a row must still validate.
+    for rec in (
+        minimal_record(algorithm="aco", ant_completion_rate=0.8),
+        minimal_record(algorithm="dijkstra"),
+        minimal_record(algorithm="astar"),
+        disruption_record(algorithm="aco", ant_completion_rate=0.5),
+        disruption_record(algorithm="dijkstra"),
+    ):
+        data = S.validate(rec)
+        for name in S.WALK_FIELDS:
+            assert getattr(rec, name) is None, name
+            assert data[name] is None, name
+
+
+def test_walk_stretch_below_one_is_rejected():
+    """The walk is one of the methods the reported minimum is taken over, so
+    it cannot beat Dijkstra either (CLAUDE.md invariant)."""
+    with pytest.raises(S.SchemaViolation, match="walk_best_stretch.*below 1.0"):
+        S.validate(
+            minimal_record(
+                algorithm="physarum",
+                walk_best_cost=3.0,
+                walk_best_stretch=0.99,
+                walk_success_count=5,
+            )
+        )
+    with pytest.raises(S.SchemaViolation, match="post_disruption_walk_stretch.*below 1.0"):
+        S.validate(disruption_record(algorithm="physarum", post_disruption_walk_stretch=0.9))
+
+    # A walk that is merely WORSE than the reported path is the normal case.
+    data = S.validate(
+        minimal_record(
+            algorithm="physarum",
+            walk_best_cost=6.0,
+            walk_best_stretch=2.0,
+            walk_success_count=3,
+            best_path_extraction_method="full_graph_fallback",
+        )
+    )
+    assert data["walk_best_stretch"] == pytest.approx(2.0)
+    assert data["stretch"] == pytest.approx(1.0)  # pooled, from the fallback
+
+
+def test_walk_best_cost_below_path_cost_is_a_divergence_violation():
+    """`path_cost` is a minimum that already includes the walk, so a lower
+    walk cost means the two trackers are no longer measuring the same run."""
+    with pytest.raises(S.SchemaViolation, match="diverged"):
+        S.validate(
+            minimal_record(
+                algorithm="physarum",
+                path_cost=3.0,
+                walk_best_cost=2.0,
+                walk_best_stretch=1.0,
+                walk_success_count=2,
+            )
+        )
+    # Equality is the expected outcome when the walk itself found the best.
+    S.validate(
+        minimal_record(
+            algorithm="physarum",
+            path_cost=3.0,
+            walk_best_cost=3.0,
+            walk_best_stretch=1.0,
+            walk_success_count=2,
+            best_path_extraction_method="max_flux_walk",
+        )
+    )
+
+
+def test_walk_columns_must_move_together():
+    with pytest.raises(S.SchemaViolation, match="walk_best_stretch is present"):
+        S.validate(minimal_record(algorithm="physarum", walk_best_stretch=1.2))
+    with pytest.raises(S.SchemaViolation, match="walk_best_stretch may only be null"):
+        S.validate(
+            minimal_record(algorithm="physarum", walk_best_cost=3.0, walk_success_count=1)
+        )
+    with pytest.raises(S.SchemaViolation, match="walk_success_count is null"):
+        S.validate(
+            minimal_record(algorithm="physarum", walk_best_cost=3.0, walk_best_stretch=1.0)
+        )
+    with pytest.raises(S.SchemaViolation, match="cannot have a best cost"):
+        S.validate(
+            minimal_record(
+                algorithm="physarum",
+                walk_best_cost=3.0,
+                walk_best_stretch=1.0,
+                walk_success_count=0,
+            )
+        )
+    with pytest.raises(S.SchemaViolation, match="walk trackers have diverged"):
+        S.validate(minimal_record(algorithm="physarum", walk_success_count=4))
+
+    # On a FAILED run the stretch may be absent alongside its cost, exactly
+    # like the pooled tier-2 columns.
+    S.validate(
+        minimal_record(
+            algorithm="physarum",
+            failed=True,
+            failure_reason="no valid path found within budget",
+            path_cost=None,
+            stretch=None,
+            path_hops=None,
+            initial_time_to_first_valid_path_iters=None,
+            walk_best_cost=3.0,
+            walk_success_count=2,
+        )
+    )
+
+
+def test_post_disruption_walk_stretch_must_be_null_for_the_control():
+    with pytest.raises(S.SchemaViolation, match="must be null for the no-disruption"):
+        S.validate(minimal_record(algorithm="physarum", post_disruption_walk_stretch=1.2))
+
+
+def test_walk_diagnostics_are_duck_typed():
+    """`metrics/` must not import `physarum.py`; the walk tracker is read off
+    whatever accessors the router happens to expose."""
+
+    class FakePhysarum:
+        def walk_best_cost(self):
+            return 7.5
+
+        def walk_success_count(self):
+            return 42
+
+    diag = C.router_diagnostics(FakePhysarum())
+    assert diag["walk_best_cost"] == pytest.approx(7.5)
+    assert diag["walk_success_count"] == 42
+
+    diag = C.router_diagnostics(StubRouter([[0, 1, 2, 5]]))
+    assert diag["walk_best_cost"] is None and diag["walk_success_count"] is None
+
+    class Exploding:
+        def walk_best_cost(self):
+            raise RuntimeError("boom")
+
+        def walk_success_count(self):
+            raise RuntimeError("boom")
+
+    diag = C.router_diagnostics(Exploding())
+    assert diag["walk_best_cost"] is None and diag["walk_success_count"] is None
+
+
+def test_run_and_collect_populates_all_four_walk_columns_for_physarum():
+    """End to end on a real Physarum run: the walk's own cost and its stretch
+    against the SAME Dijkstra reference as the pooled `stretch`, so one row
+    shows the gap."""
+    from bioroute.algorithms.physarum import PhysarumRouter
+
+    G = toy_graph()
+    snap = toy_snapshot(G)
+    router = PhysarumRouter(Path(__file__).resolve().parent.parent / "configs" / "physarum.yaml")
+    rec = C.run_and_collect(
+        router, G, 0, 5, snap, None, budget=60, warm=False, seed=0, config_hash="phase8d"
+    )
+    S.validate(rec)
+    assert rec.failed is False, rec.failure_reason
+
+    assert rec.walk_success_count is not None and rec.walk_success_count >= 1
+    assert rec.walk_best_cost == pytest.approx(router.walk_best_cost())
+    # Same denominator as the pooled stretch: Dijkstra on (G, snapshot) = 3.0.
+    reference = snap.cost_of_path(G, [0, 1, 2, 5])
+    assert rec.walk_best_stretch == pytest.approx(rec.walk_best_cost / reference)
+    assert rec.stretch == pytest.approx(rec.path_cost / reference)
+    # The pooled best is a min INCLUDING the walk, so the gap is one-sided.
+    assert rec.walk_best_cost >= rec.path_cost
+    assert rec.walk_best_stretch >= rec.stretch
+    # S0 control: no recovery phase, so no recovery walk number.
+    assert rec.post_disruption_walk_stretch is None
+
+
+def test_walk_columns_are_null_for_aco_and_classical_rows_end_to_end():
+    G = toy_graph()
+    snap = toy_snapshot(G)
+    for router in (DijkstraRouter(), StubRouter([[0, 1, 2, 5]])):
+        rec = C.run_and_collect(
+            router, G, 0, 5, snap, None, budget=4, warm=False, seed=0, config_hash="phase8d"
+        )
+        assert rec.failed is False, rec.failure_reason
+        for name in S.WALK_FIELDS:
+            assert getattr(rec, name) is None, name
+        S.validate(rec)
+
+
+def test_walk_that_never_completes_records_zero_successes_not_a_null_count():
+    """'Never walked' and 'walked badly' are different results and the
+    analysis must be able to tell them apart: a dead-ending walk gives a null
+    cost with a success count of 0, NOT a null count."""
+    G = toy_graph()
+    snap = toy_snapshot(G)
+    router = WalkAwareStub([[0, 1, 2, 5]], walk=(None, 0))
+    rec = C.run_and_collect(
+        router, G, 0, 5, snap, None, budget=4, warm=False, seed=0, config_hash="phase8d"
+    )
+    assert rec.failed is False, rec.failure_reason
+    assert rec.walk_best_cost is None
+    assert rec.walk_best_stretch is None
+    assert rec.walk_success_count == 0
+    S.validate(rec)
+
+
+def test_disruption_run_populates_post_disruption_walk_stretch_per_phase():
+    """The recovery column uses the DISRUPTED Dijkstra reference, and the
+    initial-solve columns must survive the tracker reset that
+    `apply_disruption` performs -- reading the tracker once at the end would
+    silently file recovery numbers under the initial solve."""
+    G = toy_graph()
+    snap = toy_snapshot(G)
+    router = WalkAwareStub(
+        [[0, 1, 2, 5]],
+        recovery_script=[[0, 3, 4, 5]],
+        walk=(6.0, 4),
+        recovery_walk=(12.0, 2),
+    )
+    rec = C.run_and_collect(
+        router, G, 0, 5, snap, ("S1", [(1, 2, 0)]), budget=4, warm=True, seed=0,
+        config_hash="phase8d",
+    )
+    assert rec.failed is False, rec.failure_reason
+    # Initial solve: the walk's 6.0 against the undisrupted optimum of 3.0.
+    assert rec.walk_best_cost == pytest.approx(6.0)
+    assert rec.walk_success_count == 4
+    assert rec.walk_best_stretch == pytest.approx(2.0)
+    # Recovery: the walk's 12.0 against Dijkstra ON THE DISRUPTED GRAPH (6.0),
+    # the same denominator `post_disruption_stretch` uses.
+    assert rec.post_disruption_cost == pytest.approx(6.0)
+    assert rec.post_disruption_stretch == pytest.approx(1.0)
+    assert rec.post_disruption_walk_stretch == pytest.approx(2.0)
+    S.validate(rec)
+
+
+def test_walk_columns_round_trip_through_parquet(tmp_path: Path):
+    rec = minimal_record(
+        run_id="walk",
+        algorithm="physarum",
+        walk_best_cost=6.0,
+        walk_best_stretch=2.0,
+        walk_success_count=11,
+    )
+    shard = C.write_shard([rec, minimal_record(run_id="plain")], tmp_path)
+    rows = C.read_shard(shard).to_pylist()
+    assert rows[0]["walk_best_cost"] == pytest.approx(6.0)
+    assert rows[0]["walk_best_stretch"] == pytest.approx(2.0)
+    assert rows[0]["walk_success_count"] == 11
+    assert rows[0]["post_disruption_walk_stretch"] is None
+    assert all(rows[1][name] is None for name in S.WALK_FIELDS)
+
+
+# ==========================================================================
 # Parquet write path
 # ==========================================================================
 

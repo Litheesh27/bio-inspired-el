@@ -15,6 +15,7 @@ three things:
    | `first_valid_path_iteration` | The iteration at which the router first produced ANY path avoiding every severed edge -- measured separately from convergence, because a method can find a valid route fast and a good one slowly. |
    | `recovery_iterations` / `recovery_wallclock_s` | Disruption applied -> re-stabilised valid path. |
    | `post_disruption_stretch` | Against Dijkstra recomputed ON THE DISRUPTED GRAPH -- never against the pre-disruption optimum, which would conflate "the algorithm adapted badly" with "the network genuinely got worse". |
+   | `cost_stretch` | The same ratio for a cost that is already measured, used by the Phase 8d walk-only columns (`walk_best_stretch`, `post_disruption_walk_stretch`): Physarum's walk tracker reports a cost, not a path to re-cost, and both share the denominator of their pooled counterpart so the two are comparable within one row. |
    | `peak_memory_kb` | `tracemalloc` peak across the whole measured solve. |
    | `failed` | No valid path within budget, or an exception. RECORDED as a row, never dropped. |
 
@@ -152,6 +153,30 @@ def compute_stretch(
     return max(stretch, 1.0)
 
 
+def cost_stretch(cost: float, reference_cost: float, *, label: str = "stretch") -> float:
+    """`cost / reference_cost` for a cost that is already measured.
+
+    Phase 8d needs this for the walk-only columns: Physarum's walk tracker
+    reports a COST (computed with `TrafficSnapshot.cost_of_path` on the
+    router's own graph, i.e. the same convention as everything else here),
+    not a path the metrics layer re-costs. Same below-1.0 invariant and same
+    tolerance as `compute_stretch` -- the walk is one of the methods whose
+    minimum the reported cost is taken over, so it cannot beat Dijkstra
+    either."""
+    if reference_cost is None or not math.isfinite(reference_cost) or reference_cost <= 0:
+        raise StretchError(f"Invalid Dijkstra reference cost: {reference_cost!r}")
+    if cost is None or not math.isfinite(cost) or cost <= 0:
+        raise StretchError(f"Invalid {label} numerator cost: {cost!r}")
+    stretch = cost / reference_cost
+    if stretch < 1.0 - STRETCH_TOLERANCE:
+        raise StretchError(
+            f"{label} = {stretch!r} (< 1.0): cost {cost!r} beats the Dijkstra "
+            f"optimum {reference_cost!r} on the same weighted graph. This is a "
+            "bug (CLAUDE.md invariant), not a result."
+        )
+    return max(stretch, 1.0)
+
+
 def disrupted_graph(G: nx.MultiDiGraph, removed_edges: Iterable[EdgeKey]) -> nx.MultiDiGraph:
     """A copy of `G` with `removed_edges` severed.
 
@@ -251,6 +276,12 @@ def router_diagnostics(router: Router) -> dict[str, Any]:
       cumulative from `prepare()` onward and are NOT reset by
       `apply_disruption(warm=True)`, so on a disruption run the rate spans
       the initial solve and the recovery together.
+    * `walk_best_cost` / `walk_success_count` -- Physarum's Phase 8c
+      walk-only tracker (see `walk_diagnostics`). UNLIKE the ant counters
+      these ARE reset by `apply_disruption`, so what they describe depends on
+      WHEN they are read; `_run_into` reads them per phase and this
+      function's copies are only a fallback for a run that never reached
+      that point.
     """
     out: dict[str, Any] = {
         "extraction_method": None,
@@ -278,6 +309,59 @@ def router_diagnostics(router: Router) -> dict[str, Any]:
             out["ant_completion_rate"] = min(1.0, max(0.0, completed / total))
     except Exception:
         pass
+
+    out.update(walk_diagnostics(router))
+    return out
+
+
+def _call_accessor(router: Any, name: str) -> Any:
+    """Read a duck-typed diagnostic accessor, calling it if it is a method.
+    Anything missing or raising yields None -- diagnostics must never break
+    a run."""
+    try:
+        value = getattr(router, name, None)
+        if callable(value):
+            value = value()
+        return value
+    except Exception:  # noqa: BLE001 -- diagnostics are never load-bearing
+        return None
+
+
+def walk_diagnostics(router: Router) -> dict[str, Any]:
+    """Physarum's WALK-ONLY tracker (Phase 8c), read by duck-typing.
+
+    Same rule as `router_diagnostics`: `metrics/` must not import
+    `physarum.py`, so these come off `walk_best_cost()` /
+    `walk_success_count()` if the router happens to expose them and stay
+    null otherwise -- which is exactly what null means in these columns.
+
+    Phase 8d records them because `best_path_extraction_method` alone cannot
+    answer "how good is the model's own extraction": Physarum's reported
+    `best_cost` is a minimum over every iteration AND every extraction
+    method, and one of those methods is plain Dijkstra. Phase 8c measured
+    the unaided walk reaching the optimum far less often than the pooled
+    figure suggests, but measured it on a different graph and congestion
+    source than the sweep uses -- hence these columns, inside the sweep.
+
+    TIMING MATTERS: Physarum resets this tracker inside
+    `apply_disruption()`, so the values describe whichever phase is current.
+    `_run_into` reads them once after the initial solve and once after the
+    recovery, and never infers one phase from the other.
+    """
+    out: dict[str, Any] = {"walk_best_cost": None, "walk_success_count": None}
+
+    cost = _call_accessor(router, "walk_best_cost")
+    if (
+        isinstance(cost, (int, float))
+        and not isinstance(cost, bool)
+        and math.isfinite(float(cost))
+        and float(cost) > 0
+    ):
+        out["walk_best_cost"] = float(cost)
+
+    count = _call_accessor(router, "walk_success_count")
+    if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+        out["walk_success_count"] = int(count)
 
     return out
 
@@ -461,6 +545,15 @@ def run_and_collect(
     record.extraction_method = diagnostics["extraction_method"]
     record.best_path_extraction_method = diagnostics["best_path_extraction_method"]
     record.ant_completion_rate = diagnostics["ant_completion_rate"]
+    # The walk columns are phase-scoped (Physarum resets its walk tracker in
+    # `apply_disruption`), so `_run_into` fills them at the right moment and
+    # they are already set by now on any run that got that far. Reading them
+    # here is only the fallback for a run that died before the initial solve
+    # finished -- at which point no disruption has been applied, so the
+    # tracker still describes the initial solve and the column is honest.
+    if record.walk_best_cost is None and record.walk_success_count is None:
+        record.walk_best_cost = diagnostics["walk_best_cost"]
+        record.walk_success_count = diagnostics["walk_success_count"]
 
     if record.failed:
         # A failed run reports no recovery numbers it cannot stand behind.
@@ -508,6 +601,22 @@ def _run_into(
     record.converged = bool(res.converged)
     record.wallclock_s = float(res.wallclock_s)
     record.initial_time_to_first_valid_path_iters = first_valid_path_iteration(res)
+
+    # -- 2b. the walk's own numbers for the INITIAL solve (Phase 8d) -------
+    # Read HERE, before any disruption: Physarum resets its walk tracker
+    # inside `apply_disruption`, so reading it at the end of the run would
+    # silently put recovery-phase numbers in the initial-solve columns. Null
+    # for every other algorithm. Captured before the no-path early return so
+    # that a Physarum run which found nothing still records whether the walk
+    # ever completed (`walk_success_count` = 0 means "never walked", not
+    # "walked badly").
+    walk = walk_diagnostics(router)
+    record.walk_success_count = walk["walk_success_count"]
+    record.walk_best_cost = walk["walk_best_cost"]
+    if record.walk_best_cost is not None:
+        record.walk_best_stretch = cost_stretch(
+            record.walk_best_cost, reference_cost, label="walk_best_stretch"
+        )
 
     if not res.path:
         record.failed = True
@@ -568,6 +677,22 @@ def _run_into(
     record.post_disruption_stretch = compute_stretch(
         Gd, snapshot, rec.path, disrupted_reference_cost
     )
+
+    # -- 3b. the walk's own number for the RECOVERY (Phase 8d) -------------
+    # The tracker was reset by `apply_disruption`, so what it holds now
+    # describes the recovery only -- and the router severs the removed edges
+    # from its own graph copy, so a walk path cannot contain one. Measured
+    # against Dijkstra on the DISRUPTED graph, the same denominator
+    # `post_disruption_stretch` uses. Stays null if the walk never completed
+    # a path after the closure, which is itself a result.
+    recovery_walk = walk_diagnostics(router)
+    if recovery_walk["walk_best_cost"] is not None:
+        record.post_disruption_walk_stretch = cost_stretch(
+            recovery_walk["walk_best_cost"],
+            disrupted_reference_cost,
+            label="post_disruption_walk_stretch",
+        )
+
     record.failed = False
     record.failure_reason = ""
 

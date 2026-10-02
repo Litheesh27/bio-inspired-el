@@ -331,15 +331,49 @@ that file has the detail.
       deliberate open option rather than a silent fix.
       CAVEAT: 8c measured freeflow and BPR on the `config_speeds` graph. The
       sweep's SUMO / `sumo_speeds` cells are UNMEASURED — hence Phase 8d.
-- [ ] Phase 8d — Surface `walk_best_cost` / `walk_best_stretch` as schema
-      columns. MUST land BEFORE the sweep: a column added afterwards means
-      regenerating 5,520 rows (same reason Phase 8b went first). Phase 8c's
-      walk-only figures are freeflow/BPR on `config_speeds`; the sweep runs SUMO
-      on `sumo_speeds`, so without this column the paper's headline Physarum
-      numbers and its central caveat would come from different graphs AND
-      different congestion sources. The tracker already exists in
-      `physarum.py` (`walk_best_cost()` etc. from 8c) — this is schema +
-      collectors plumbing only.
+- [x] Phase 8d — Walk-only columns plumbed into the schema. `physarum.py`
+      UNTOUCHED (verified: `git diff --stat` on it is empty).
+      Four nullable fields, grouped as `WALK_FIELDS` inside `DIAGNOSTIC_FIELDS`
+      so Phase 9 has a named group it must never pool with `stretch`:
+      `walk_best_cost`, `walk_best_stretch`, `walk_success_count`,
+      `post_disruption_walk_stretch`. Null on ACO/classical rows, where null
+      means "this algorithm has no separable extraction step".
+      `walk_best_stretch` uses the SAME per-cell Dijkstra `reference_cost` as
+      the pooled `stretch` (and the disrupted reference for the recovery twin),
+      so the two are directly comparable within one row.
+      **SUBTLETY THAT WOULD HAVE SILENTLY MISFILED DATA:** Physarum's walk
+      tracker is reset inside `apply_disruption` (`_reset_run_state`), so reading
+      it once at the end of `run_and_collect` would have filed RECOVERY numbers
+      under the INITIAL-solve columns. `_run_into` therefore captures twice —
+      right after the initial `run_to_convergence` (before the no-path early
+      return, so a walk that found nothing still records
+      `walk_success_count`), and again after the recovery passes its
+      removed-edge check.
+      Divergence invariant asserted: `walk_best_cost >= path_cost` when both
+      present. The pooled best is a min that already INCLUDES the walk, so a
+      lower walk cost means the two trackers are no longer measuring the same
+      run. Also `walk_best_stretch >= 1.0`, and the three initial-solve columns
+      must move together (`count == 0` with a cost raises; `count > 0` with a
+      null cost raises unless failed).
+      `post_disruption_walk_stretch` is enforced null for S0 but deliberately
+      kept OPTIONAL on a successful disruption row rather than added to
+      `RECOVERY_FIELDS` — a Physarum walk can legitimately dead-end through an
+      entire recovery, which `RECOVERY_FIELDS`' must-not-be-null half would have
+      forbidden.
+      **THE COLUMN EARNS ITS PLACE ON THE SWEEP'S OWN GRAPH.** Sample row,
+      `sumo_speeds` + real SUMO heavy + S4 warm: pooled `stretch = 1.0000`
+      attributed to `full_graph_fallback` (plain Dijkstra), while
+      `walk_best_stretch` is NULL with `walk_success_count = 0` — the model's own
+      extraction never completed a path at all. Without these columns that row
+      reads as a perfect Physarum result.
+      Also noted: SUMO-heavy-on-`sumo_speeds` looks KINDER to the walk than
+      Phase 8c's config_speeds/BPR-heavy (4 of 5 sample rows were genuine
+      `max_flux_walk` wins at stretch 1.0, vs 8c's 3.3-16.7%), which is itself
+      why the sweep had to carry its own measurement rather than inherit 8c's.
+      GOTCHA: `generate_disruption(G, source, target, snapshot, scenario_id,
+      seed, ...)` has `scenario_id` FIFTH, and callers must check `dis.ok`
+      before use — passing a `ok=False` Disruption through yields
+      `SchemaViolation: scenario 'S4' recorded 0 removed edges`.
 - [ ] Phase 9 — Analysis, figures, and results dashboard (7 figures + published
       Artifact dashboard).
       **HARD REQUIREMENT: never pool Physarum's stretch across provenance.**

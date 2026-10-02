@@ -56,6 +56,36 @@ Three nullability tiers, enforced by `validate()`:
   two columns disagreeing on 1 of 6. Phase 9 must caveat Physarum's stretch
   figures using this column; see `docs/tuning/physarum_extraction_provenance.md`.
 
+  PHASE 8D -- THE WALK'S OWN NUMBERS, ON THE SWEEP'S OWN GRAPH.
+  `best_path_extraction_method` says WHERE the reported path came from but
+  not HOW GOOD the model's own extraction was, and it under-states the walk
+  (the fallbacks are Dijkstra-exact and fire in the first ~18 iterations, and
+  `cost < best_cost` is strict, so afterwards the walk can only tie and a tie
+  is scored as a loss). Phase 8c measured the unaided `max_flux_walk`
+  reaching the optimum on 36.7-46.7% of pairs under freeflow and 3.3-16.7%
+  under BPR heavy against a pooled 83-87% -- but it measured that on the
+  `config_speeds` graph with freeflow/BPR, while the sweep runs SUMO on
+  `sumo_speeds`. Four nullable columns carry the walk-only measurement in
+  the sweep itself, so the headline Physarum numbers and their central
+  caveat come from the SAME rows:
+
+    * `walk_best_cost` -- the lowest cost the max-flux walk reached by
+      itself on the initial solve, ignoring both fallbacks. Null when the
+      walk never completed a path (which is NOT the same as completing a bad
+      one -- `walk_success_count` separates those two).
+    * `walk_best_stretch` -- `walk_best_cost` over the SAME Dijkstra
+      reference the pooled `stretch` uses, so the two are directly
+      comparable in one row.
+    * `walk_success_count` -- how many iterations the walk produced any
+      path at all.
+    * `post_disruption_walk_stretch` -- the recovery-phase equivalent,
+      against Dijkstra on the DISRUPTED graph. Null for the S0 control, like
+      every other recovery column.
+
+  Only Physarum populates these (they are read off the Phase 8c tracker by
+  duck-typing); for ACO and the classical routers they are null, and null
+  there means "this algorithm has no separable extraction step".
+
 A note on the two first-valid-path columns, because the distinction is the
 project's central speed-vs-quality question (CLAUDE.md honest-reporting
 note, PLAN.md Phase 6):
@@ -240,6 +270,15 @@ class ResultRecord:
     best_path_extraction_method: str | None = None
     ant_completion_rate: float | None = None
 
+    # -- Physarum walk-only measurement (Phase 8d; see the module docstring)
+    # These sit beside the two extraction columns because they answer the
+    # same question from the other side: those say which method produced the
+    # reported path, these say what the model's OWN extraction achieved.
+    walk_best_cost: float | None = None
+    walk_best_stretch: float | None = None
+    walk_success_count: int | None = None
+    post_disruption_walk_stretch: float | None = None
+
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
@@ -287,11 +326,22 @@ RECOVERY_FIELDS: tuple[str, ...] = (
     "post_disruption_stretch",
 )
 
+#: Physarum's walk-only columns (Phase 8d). A subset of
+#: `DIAGNOSTIC_FIELDS` -- they share its nullability semantics ("null means
+#: this algorithm has no separable extraction step"), and are named as a
+#: group because Phase 9 must never pool them with the `stretch` columns.
+WALK_FIELDS: tuple[str, ...] = (
+    "walk_best_cost",
+    "walk_best_stretch",
+    "walk_success_count",
+    "post_disruption_walk_stretch",
+)
+
 DIAGNOSTIC_FIELDS: tuple[str, ...] = (
     "extraction_method",
     "best_path_extraction_method",
     "ant_completion_rate",
-)
+) + WALK_FIELDS
 
 ALL_FIELDS: tuple[str, ...] = REQUIRED_FIELDS + SOLVE_FIELDS + RECOVERY_FIELDS + DIAGNOSTIC_FIELDS
 
@@ -344,6 +394,10 @@ RESULT_SCHEMA = pa.schema(
         pa.field("extraction_method", pa.string(), nullable=True),
         pa.field("best_path_extraction_method", pa.string(), nullable=True),
         pa.field("ant_completion_rate", pa.float64(), nullable=True),
+        pa.field("walk_best_cost", pa.float64(), nullable=True),
+        pa.field("walk_best_stretch", pa.float64(), nullable=True),
+        pa.field("walk_success_count", pa.int64(), nullable=True),
+        pa.field("post_disruption_walk_stretch", pa.float64(), nullable=True),
     ]
 )
 
@@ -511,7 +565,102 @@ def validate(record: Any) -> dict[str, Any]:
     if not _is_null(rate) and not (0.0 <= float(rate) <= 1.0):
         raise SchemaViolation(f"ant_completion_rate must be in [0, 1], got {rate!r}")
 
+    _validate_walk_columns(data, failed=failed, control=control)
+
     return data
+
+
+def _validate_walk_columns(
+    data: Mapping[str, Any], *, failed: bool, control: bool
+) -> None:
+    """Phase 8d: the Physarum walk-only columns.
+
+    They are DIAGNOSTIC-nullable at the top level (ACO and the classical
+    routers never populate them), but within a row that does populate them
+    the same tiers as their pooled counterparts apply: `walk_best_stretch`
+    may only be absent alongside its cost or on a failed run, and
+    `post_disruption_walk_stretch` must be null for the control. The three
+    initial-solve columns move together -- a row carrying one without the
+    others means the two trackers inside the router have diverged, which is
+    a bug and not a measurement."""
+    walk_cost = data["walk_best_cost"]
+    walk_stretch = data["walk_best_stretch"]
+    walk_count = data["walk_success_count"]
+    post_walk_stretch = data["post_disruption_walk_stretch"]
+
+    if not _is_null(walk_cost):
+        val = float(walk_cost)
+        if not math.isfinite(val) or val <= 0:
+            raise SchemaViolation(f"walk_best_cost must be finite and > 0, got {walk_cost!r}")
+
+    # The walk cannot beat Dijkstra either -- same invariant, same tolerance.
+    for name in ("walk_best_stretch", "post_disruption_walk_stretch"):
+        val = data[name]
+        if _is_null(val):
+            continue
+        val = float(val)
+        if not math.isfinite(val):
+            raise SchemaViolation(f"{name} must be finite, got {data[name]!r}")
+        if val < 1.0 - STRETCH_TOLERANCE:
+            raise SchemaViolation(
+                f"{name} = {val!r} is below 1.0: the max-flux walk beat Dijkstra "
+                "on the same weighted graph, which is a bug (CLAUDE.md "
+                "invariant), not a result."
+            )
+
+    if not _is_null(walk_count) and int(walk_count) < 0:
+        raise SchemaViolation(f"walk_success_count must be >= 0, got {walk_count!r}")
+
+    # -- the three initial-solve walk columns move together ----------------
+    if not _is_null(walk_stretch) and _is_null(walk_cost):
+        raise SchemaViolation(
+            "walk_best_stretch is present but walk_best_cost is null: the walk "
+            "trackers have diverged"
+        )
+    if not _is_null(walk_cost) and _is_null(walk_stretch) and not failed:
+        raise SchemaViolation(
+            "walk_best_stretch may only be null on a failed run when "
+            "walk_best_cost is present (failed=False here)"
+        )
+    if not _is_null(walk_cost) and _is_null(walk_count):
+        raise SchemaViolation(
+            "walk_best_cost is present but walk_success_count is null: a cost "
+            "can only come from an iteration the walk completed"
+        )
+    if not _is_null(walk_count):
+        if int(walk_count) == 0 and not _is_null(walk_cost):
+            raise SchemaViolation(
+                f"walk_success_count is 0 but walk_best_cost is {walk_cost!r}: "
+                "the walk cannot have a best cost without completing a path"
+            )
+        if int(walk_count) > 0 and _is_null(walk_cost) and not failed:
+            raise SchemaViolation(
+                f"walk_success_count is {walk_count!r} but walk_best_cost is null: "
+                "the walk trackers have diverged"
+            )
+
+    # -- the divergence invariant ------------------------------------------
+    # The REPORTED cost is a minimum over every iteration AND every
+    # extraction method, and the walk is one of those methods, so the walk's
+    # own best can never be below it. A violation is not a surprising result;
+    # it means the pooled and walk-only trackers inside the router are no
+    # longer measuring the same runs.
+    path_cost = data["path_cost"]
+    if not _is_null(walk_cost) and not _is_null(path_cost):
+        if float(walk_cost) < float(path_cost) * (1.0 - STRETCH_TOLERANCE):
+            raise SchemaViolation(
+                f"walk_best_cost ({walk_cost!r}) is below path_cost "
+                f"({path_cost!r}): the reported cost is a minimum that already "
+                "includes the walk, so this means the pooled and walk-only "
+                "trackers have diverged."
+            )
+
+    # -- tier 3: no recovery phase exists for the control ------------------
+    if control and not _is_null(post_walk_stretch):
+        raise SchemaViolation(
+            "post_disruption_walk_stretch must be null for the no-disruption "
+            f"control, got {post_walk_stretch!r}"
+        )
 
 
 def _check_first_valid(data: Mapping[str, Any], name: str, bound: Any, bound_name: str) -> None:
