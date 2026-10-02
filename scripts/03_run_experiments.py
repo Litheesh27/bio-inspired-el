@@ -29,6 +29,7 @@ file are per-solve measurements taken under contention.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -89,6 +90,11 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="a finished results Parquet (e.g. a smoke run) whose measured "
         "per-solve medians replace the config's cost estimates in --dry-run",
+    )
+    parser.add_argument(
+        "--only-algorithms",
+        default=None,
+        help="comma-separated algorithm names to run THIS invocation (e.g. 'dijkstra,astar,physarum'). Filters cells AFTER the matrix is built, so the config hash and therefore the shard directory are UNCHANGED -- the algorithms left out stay resumable into the same dataset later. ACO is ~97%% of this sweep's compute, so this is how you get the other three in minutes.",
     )
     parser.add_argument("--no-progress", action="store_true", help="disable the progress bar")
     parser.add_argument(
@@ -163,6 +169,25 @@ def main(argv: list[str] | None = None) -> int:
             "in the matrix. Refusing to run."
         )
         return 2
+    if args.only_algorithms:
+        wanted = {a.strip() for a in args.only_algorithms.split(",") if a.strip()}
+        known = {r.algorithm for c in cells for r in c.runs}
+        unknown = wanted - known
+        if unknown:
+            print(f"ERROR: --only-algorithms names unknown algorithms: {sorted(unknown)}. "
+                  f"Known: {sorted(known)}. Refusing to run.")
+            return 2
+        kept = []
+        for c in cells:
+            runs = tuple(r for r in c.runs if r.algorithm in wanted)
+            if runs:
+                kept.append(dataclasses.replace(c, runs=runs))
+        n_before = summary["n_runs"]
+        cells = kept
+        summary = matrix_summary(cells)
+        print(f"  only-algorithms: {sorted(wanted)} -> {summary['n_cells']} cells, "
+              f"{summary['n_runs']} runs (of {n_before}); the rest stay resumable "
+              "into this same shard dir")
     print(f"  by algorithm   : {summary['runs_by_algorithm']}")
     print(f"  by scenario    : {summary['runs_by_scenario']}")
     print(f"  by condition   : {summary['runs_by_condition']}")
