@@ -285,19 +285,70 @@ that file has the detail.
       12 were bug-caused (all S6), 9 are independent (3x S0, 6x S1) and
       bit-identical after the fix — that residual is Phase 5's genuine bimodal
       behaviour, confirmed identical at budget 300 as at 60.
-- [ ] Phase 8b — CAVEAT found in Phase 8a, reported not fixed. Physarum's
-      `best_cost` is a min over ALL iterations AND ALL extraction methods, so on
-      3 of 6 undisrupted pairs the path that set `best_cost` came from a
-      FALLBACK (2x `full_graph_fallback` = plain Dijkstra, 1x
-      `theta_subgraph_fallback`) even though the max-flux walk succeeded on
-      34-56 iterations. Also, the recorded `extraction_method` is the LAST
-      iteration's method, which disagreed with the method that produced
-      `best_path` on 1 of 6. Consequence: **a Physarum stretch of 1.0 can mean
-      "Dijkstra's answer, obtained via the fallback"** even on undisrupted
-      cells. This is Phase 5 design and is honestly recorded, but it needs a
-      Phase 9 reporting caveat and arguably a `best_path_extraction_method`
-      field so fallback-derived wins are separable from genuine flux-walk wins.
-- [ ] Phase 9 — Analysis, figures, and results dashboard (7 figures + published Artifact dashboard)
+- [x] Phase 8b — `best_path_extraction_method` added (tracked when `best_cost`
+      improves, NOT at the final iteration) plus a schema column, so every sweep
+      row records where its reported path came from. Instrumentation only,
+      verified bit-identical to HEAD across 30 pairs.
+      Of Physarum's reported paths (30 pairs, freeflow): 53% from
+      `theta_subgraph_fallback`, 33% from `max_flux_walk`, 13% from
+      `full_graph_fallback` (= plain Dijkstra). The two method columns disagree
+      on 17/30 pairs. Mechanism: `theta: 0.05` while D starts near 1.0, so for
+      ~18 iterations the theta subgraph is essentially the WHOLE graph and the
+      "fallback" is Dijkstra; `best_cost` is a STRICT min over all iterations so
+      it locks in there and the walk can only tie, never win (observed: walk
+      succeeded on 115/118 iterations and still scored a loss).
+- [x] Phase 8c — Measured the walk's UNAIDED accuracy, since 8b's 33% was
+      confounded by that strict-`<` head start. Measurement only; Physarum
+      bit-identical (16 interleaved cases, 0 differences, exact float equality
+      on per-iteration traces, final D and p vectors).
+      **WALK-ONLY EXACT-MATCH vs POOLED 83-87%:**
+        draw 2024 freeflow  36.7%   | draw 8080 freeflow  46.7%
+        draw 2024 BPR heavy  3.3%   | draw 8080 BPR heavy 16.7%
+      Walk produced ANY path on 76.7%/83.3% (freeflow), 53.3%/70.0% (heavy).
+      **Tie rate (walk reached the pooled optimum but lost on strict `<`):
+      25-29% of fallback-attributed pairs under freeflow, and EXACTLY 0% under
+      congestion.** So the bookkeeping artifact explains about a THIRD of the
+      freeflow deficit and NONE of the congestion deficit.
+      **VERDICT (b): Physarum's apparent competence substantially DEPENDS on
+      `theta_subgraph_fallback`. Phase 5's 87% is not a measure of the model's
+      own extraction.** This is a reportable finding, not something to tune away.
+      Mechanism: the pressure field is solved on an UNDIRECTED projection while
+      an extracted path must be DIRECTED-legal on a network with mean out-degree
+      2.46, pervasive one-ways and cul-de-sacs — the flux says "flow this way",
+      the road says "not in that direction". Failure split (8080 freeflow)
+      exact/wrong-path/no-path = 14/11/5, so dead-ending and wrong-path are both
+      first-order. Median Dijkstra hops 30 (exact) / 49 (wrong) / 44 (no-path):
+      it degrades with path length.
+      **PAIRS WITH THE ACO FINDING INTO A TWO-SIDED RESULT: the two bio-inspired
+      methods fail in OPPOSITE directions under congestion.** ACO improves
+      (congestion flattens the cost surface, more routes land within 10% of
+      optimal); Physarum degrades (46.7% -> 16.7%). See
+      `docs/tuning/physarum_extraction_provenance.md`.
+      Measured but NOT applied: a prefer-walk-on-tie policy would move the
+      freeflow provenance share 33% -> ~50% WITHOUT changing a single reported
+      cost (the 10 denied ties land at iterations 25-65), and would recover
+      nothing under congestion. It changes `best_cost` semantics, so it is a
+      deliberate open option rather than a silent fix.
+      CAVEAT: 8c measured freeflow and BPR on the `config_speeds` graph. The
+      sweep's SUMO / `sumo_speeds` cells are UNMEASURED — hence Phase 8d.
+- [ ] Phase 8d — Surface `walk_best_cost` / `walk_best_stretch` as schema
+      columns. MUST land BEFORE the sweep: a column added afterwards means
+      regenerating 5,520 rows (same reason Phase 8b went first). Phase 8c's
+      walk-only figures are freeflow/BPR on `config_speeds`; the sweep runs SUMO
+      on `sumo_speeds`, so without this column the paper's headline Physarum
+      numbers and its central caveat would come from different graphs AND
+      different congestion sources. The tracker already exists in
+      `physarum.py` (`walk_best_cost()` etc. from 8c) — this is schema +
+      collectors plumbing only.
+- [ ] Phase 9 — Analysis, figures, and results dashboard (7 figures + published
+      Artifact dashboard).
+      **HARD REQUIREMENT: never pool Physarum's stretch across provenance.**
+      Report a model-only series (`max_flux_walk`) and a with-fallback series,
+      separately and labelled, using `best_path_extraction_method` and
+      `walk_best_stretch`. A pooled Physarum stretch of 1.0 can mean "Dijkstra's
+      answer via the fallback" (see Phase 8b/8c), and pooling it would make the
+      Physarum-vs-Dijkstra comparison partly circular — the single most
+      attackable claim in the writeup.
 
 ## Repo layout
 

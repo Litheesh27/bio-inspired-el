@@ -160,6 +160,26 @@ Neither replaces the other and neither is derivable from
 ``extraction_counts()``. This is instrumentation only: no number the model
 computes depends on it.
 
+HOW GOOD IS THE WALK *ON ITS OWN* (Phase 8c)
+----------------------------------------------------------------------------
+``best_path_extraction_method()`` under-states the walk, because the contest
+it reports is rigged by two pieces of bookkeeping: the fallbacks are
+Dijkstra-exact by construction and fire in the first ~18 iterations (while
+every ``D`` is still above ``theta``, so the "theta subgraph" is essentially
+the whole graph), and ``cost < best_cost`` is STRICT -- so once the optimum
+is in, the walk can only TIE, and a tie is scored as a loss. Phase 8b
+recorded the walk succeeding on 115 of 118 iterations and still "losing".
+
+So a second, independent tracker records the best cost the MAX-FLUX WALK
+reached by itself: ``walk_best_cost()`` / ``walk_best_path()`` /
+``walk_best_iteration()`` / ``walk_first_success_iteration()`` /
+``walk_success_count()``. They are pure measurement -- updated after the
+pooled tracker, read by nothing the model does, and the reported path,
+``best_cost`` and ``theta`` are all unchanged. ``walk_best_cost()`` is by
+construction ``>= best_cost()``. Measured results and the verdict are in
+``docs/tuning/physarum_extraction_provenance.md`` (Phase 8c section);
+``scripts/measure_physarum_walk.py`` is the harness.
+
 DISRUPTION
 ----------------------------------------------------------------------------
 ``apply_disruption(removed_edges, warm)``:
@@ -331,6 +351,24 @@ class PhysarumRouter(Router):
         self._extraction_counts[method] = self._extraction_counts.get(method, 0) + 1
         self._last_method = method
 
+        # -- Phase 8c: WALK-ONLY measurement. Read-only bookkeeping; nothing
+        # below this comment is read by the model, by `best_cost`, or by any
+        # decision the router makes. It exists because the pooled `best_cost`
+        # cannot answer "how good is the max-flux walk on its own": the
+        # fallbacks are Dijkstra-exact by construction and fire while D is
+        # still uniformly above `theta` (so the theta subgraph is ~the whole
+        # graph), which locks in a `best_cost` the walk can afterwards only
+        # TIE -- and `cost < self._best_cost` is strict, so a tie is scored as
+        # a loss. See docs/tuning/physarum_extraction_provenance.md.
+        if method == "max_flux_walk" and cost is not None:
+            self._walk_success_count += 1
+            if self._walk_first_success_iteration is None:
+                self._walk_first_success_iteration = self._iteration
+            if self._walk_best_cost is None or cost < self._walk_best_cost:
+                self._walk_best_path = list(path) if path is not None else None
+                self._walk_best_cost = cost
+                self._walk_best_iteration = self._iteration
+
         self._path_history.append(tuple(path) if path is not None else None)
         if len(self._path_history) > self._stability_k:
             self._path_history.pop(0)
@@ -471,6 +509,45 @@ class PhysarumRouter(Router):
         None before the first successful extraction (and after a disruption
         resets the tracker), exactly like `best_path()`."""
         return self._best_method
+
+    # -- Phase 8c: walk-only measurement accessors -------------------------
+    # Every method below is READ-ONLY instrumentation over state that no
+    # model decision consults. They exist because `best_path_extraction_
+    # method()` alone makes the walk look worse than it is: the fallbacks are
+    # Dijkstra-exact by construction and fire in the first ~18 iterations
+    # (while every D is still above `theta`, so the "theta subgraph" is
+    # essentially the whole graph), and `cost < best_cost` is STRICT -- so
+    # once the optimum is in, the walk can only tie and a tie is recorded as
+    # a loss. The counterfactual these answer is "what would Physarum report
+    # if the max-flux walk were the only extraction method?".
+
+    def walk_best_cost(self) -> float | None:
+        """Lowest path cost the MAX-FLUX WALK itself achieved on any
+        iteration, ignoring both fallbacks. None if the walk never completed
+        a path to the target. Always >= `best_cost()` (the pooled minimum)."""
+        return self._walk_best_cost
+
+    def walk_best_path(self) -> list[int] | None:
+        """The path behind `walk_best_cost()`. Never reported by the router;
+        `best_path()` is unchanged."""
+        return None if self._walk_best_path is None else list(self._walk_best_path)
+
+    def walk_best_iteration(self) -> int | None:
+        """Iteration (1-based) on which `walk_best_cost()` was last improved.
+        Tells whether the walk's best arrives before or after the flux field
+        has differentiated -- i.e. whether a delayed-fallback policy could
+        recover the credit the strict `<` denies it."""
+        return self._walk_best_iteration
+
+    def walk_first_success_iteration(self) -> int | None:
+        """First iteration on which the walk reached the target at all."""
+        return self._walk_first_success_iteration
+
+    def walk_success_count(self) -> int:
+        """How many iterations the walk completed a path on. Equal to
+        `extraction_counts().get("max_flux_walk", 0)`; kept separate so walk
+        measurement does not depend on the shared tally's semantics."""
+        return self._walk_success_count
 
     def active_component(self) -> tuple[int, int]:
         """``(active_nodes, total_nodes)`` for the component the Laplacian is
@@ -635,6 +712,14 @@ class PhysarumRouter(Router):
         # retained method would attribute the new run's best path to the old
         # run's extraction.
         self._best_method: str | None = None
+        # Phase 8c walk-only measurement (see step()). Reset with the pooled
+        # tracker for the same reason: a retained walk best could describe a
+        # path containing a severed edge.
+        self._walk_best_path: list[int] | None = None
+        self._walk_best_cost: float | None = None
+        self._walk_best_iteration: int | None = None
+        self._walk_first_success_iteration: int | None = None
+        self._walk_success_count: int = 0
 
     # -- Per-iteration Laplacian solve ---------------------------------------
 

@@ -685,3 +685,145 @@ def test_active_component_is_whole_graph_when_nothing_is_stranded():
     # Severing an interior link leaves every node still reachable.
     router.apply_disruption([("B", "C", 0), ("C", "B", 0)], warm=True)
     assert router.active_component() == (5, 5)
+
+
+# --------------------------------------------------------------------------
+# PHASE 8C: how good is the MAX-FLUX WALK on its own?
+#
+# Phase 8b's provenance figure (33% of reported paths from the walk) is a
+# true statement about provenance and a misleading one about accuracy, for two
+# bookkeeping reasons: the fallbacks are Dijkstra-exact by construction and
+# fire while every D is still above `theta` (so the theta subgraph is ~the
+# whole graph), and `cost < best_cost` is STRICT -- so once the optimum is in,
+# the walk can only TIE and a tie is scored as a loss. These tests pin the
+# read-only walk-only tracker that measures the counterfactual "what would
+# Physarum report if the walk were its only extraction method?".
+# `scripts/measure_physarum_walk.py` is the harness;
+# docs/tuning/physarum_extraction_provenance.md has the measured verdict.
+# --------------------------------------------------------------------------
+
+
+def test_walk_tracker_matches_the_pooled_best_when_the_walk_always_wins():
+    """On the plain toy graph the walk succeeds on every iteration, so the
+    walk-only best IS the pooled best and nothing was taken from it."""
+    G = _toy_graph()
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    assert router.walk_best_cost() is None, "null before any extraction"
+    assert router.walk_success_count() == 0
+    result = _run(router)
+
+    assert router.walk_best_cost() == pytest.approx(result.cost, rel=1e-12)
+    assert router.walk_best_path() == result.path
+    assert router.walk_success_count() == router.extraction_counts()["max_flux_walk"]
+    assert router.walk_first_success_iteration() == 1
+    assert router.walk_best_iteration() is not None
+
+
+def test_walk_tracker_is_null_when_the_walk_never_completes_a_path():
+    """The one-way trap graph dead-ends the walk on every iteration. The
+    router still REPORTS a path (via the fallback, unchanged), but the
+    walk-only measurement must say plainly that the model's own extraction
+    produced nothing -- that distinction is the whole point."""
+    G = _oneway_trap_graph()
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    result = _run(router)
+
+    assert "max_flux_walk" not in router.extraction_counts()
+    assert result.cost == pytest.approx(_TRAP_OPTIMAL_COST, rel=1e-9)
+    assert router.walk_best_cost() is None
+    assert router.walk_best_path() is None
+    assert router.walk_best_iteration() is None
+    assert router.walk_first_success_iteration() is None
+    assert router.walk_success_count() == 0
+
+
+def test_walk_tracker_records_the_tie_the_strict_comparison_denies():
+    """THE CRUX. A fallback sets `best_cost` on iteration 1; the walk then
+    reaches the IDENTICAL cost on every later iteration and is recorded as
+    having contributed nothing, because `cost < best_cost` is strict. The
+    provenance field must keep saying `theta_subgraph_fallback` (it is not a
+    lie -- that method is what set the value) while the walk-only tracker
+    shows the walk found the same optimum.
+
+    Extraction is scripted so the ordering under test is pinned rather than
+    left to whatever the relaxation happens to do; the unmocked cases are
+    covered by the two tests above and measured at scale by the script."""
+    G = _toy_graph()
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+
+    optimum = (["A", "B", "C", "D", "E"], 1.0, "theta_subgraph_fallback")
+    walk_tie = (["A", "B", "C", "D", "E"], 1.0, "max_flux_walk")
+    calls = {"n": 0}
+
+    def scripted(_p, _w):
+        calls["n"] += 1
+        return optimum if calls["n"] == 1 else walk_tie
+
+    router._extract_path = scripted  # instance-level override, test only
+    for _ in range(8):
+        router.step()
+
+    assert router.best_cost() == pytest.approx(1.0)
+    assert router.best_path_extraction_method() == "theta_subgraph_fallback"
+    # ... and yet the walk found exactly the same cost, 7 times.
+    assert router.walk_best_cost() == pytest.approx(1.0)
+    assert router.walk_success_count() == 7
+    assert router.walk_first_success_iteration() == 2
+    assert router.walk_best_iteration() == 2
+
+
+@pytest.mark.parametrize("graph_fn", [_toy_graph, _oneway_trap_graph])
+def test_walk_best_is_never_better_than_the_pooled_best(graph_fn):
+    """Structural invariant: the pooled best is a minimum over a SUPERSET of
+    the walk's results, so the walk can never come out ahead. A violation
+    would mean the instrumentation is reading something other than the costs
+    the pooled tracker sees."""
+    G = graph_fn()
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    _run(router)
+
+    if router.walk_best_cost() is not None:
+        assert router.walk_best_cost() >= router.best_cost() - 1e-12
+
+
+def test_walk_tracker_resets_with_the_best_path_tracker():
+    """A pre-disruption walk path can contain a severed edge, so the walk-only
+    measurement must reset with `best_path`/`best_cost` -- otherwise a
+    recovery row would report the walk's PRE-closure accuracy."""
+    G = _toy_graph_with_spur(1)
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    _run(router)
+    assert router.walk_best_cost() is not None
+
+    router.apply_disruption([("D", "F", 0), ("F", "D", 0)], warm=True)
+    assert router.walk_best_cost() is None
+    assert router.walk_best_path() is None
+    assert router.walk_best_iteration() is None
+    assert router.walk_first_success_iteration() is None
+    assert router.walk_success_count() == 0
+
+
+def test_walk_best_path_is_a_copy_not_an_alias():
+    """The tracker is measurement: handing out the live list would let a
+    reader mutate state the model holds. Pinned because the whole claim of
+    Phase 8c is that the instrumentation cannot change what Physarum does."""
+    G = _toy_graph()
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    _run(router)
+
+    got = router.walk_best_path()
+    got.append("Z")
+    assert router.walk_best_path() == ["A", "B", "C", "D", "E"]
+    assert router.best_path() == ["A", "B", "C", "D", "E"]
