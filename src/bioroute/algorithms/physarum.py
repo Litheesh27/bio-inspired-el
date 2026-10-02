@@ -134,6 +134,32 @@ switched), in ``RouterResult.extras["extraction_method"]`` and tallied in
 ``extras["extraction_counts"]``, because a silent switch between runs would
 make ``stretch`` numbers incomparable across the study.
 
+WHICH METHOD PRODUCED THE *REPORTED* PATH (Phase 8b)
+----------------------------------------------------------------------------
+``best_cost`` is a minimum over every iteration AND every extraction method,
+so the path that ends up being reported need not come from the max-flux walk
+even when the walk succeeded on most iterations. Phase 8a measured exactly
+that: on 3 of 6 undisrupted real-graph pairs the winning path came from a
+fallback (2x ``full_graph_fallback``, 1x ``theta_subgraph_fallback``) while
+the walk had succeeded on 34-56 iterations, and on 1 of 6 the LAST
+iteration's method disagreed with the method that produced ``best_path``.
+Since ``full_graph_fallback`` is plain Dijkstra on the full graph, a reported
+Physarum stretch of exactly 1.0 can mean "Dijkstra's answer, obtained via the
+fallback". That is honest model design (the fallback exists because a
+physical tube network genuinely can fail to yield a walkable path), but it is
+unreportable unless the two cases are separable -- so TWO methods are
+exposed, with deliberately different meanings:
+
+  * ``last_extraction_method()`` -- how the run ENDED (the final step()'s
+    method). Recorded in the Phase 6 column ``extraction_method``.
+  * ``best_path_extraction_method()`` -- where the REPORTED ANSWER came from
+    (the method in force the last time ``best_cost`` improved). Recorded in
+    the Phase 6 column ``best_path_extraction_method``.
+
+Neither replaces the other and neither is derivable from
+``extraction_counts()``. This is instrumentation only: no number the model
+computes depends on it.
+
 DISRUPTION
 ----------------------------------------------------------------------------
 ``apply_disruption(removed_edges, warm)``:
@@ -312,6 +338,16 @@ class PhysarumRouter(Router):
         if path is not None and (self._best_cost is None or cost < self._best_cost):
             self._best_path = path
             self._best_cost = cost
+            # Provenance of the REPORTED answer (Phase 8b). `best_cost` is a
+            # min over every iteration AND every extraction method, so the
+            # path that wins can come from a fallback -- and
+            # `full_graph_fallback` IS plain Dijkstra, which would make a
+            # reported stretch of 1.0 mean "Dijkstra's own answer" rather
+            # than "the flux walk found the optimum". This records which
+            # method produced the winning path, at the moment it won;
+            # `_last_method` deliberately keeps its own meaning (how the run
+            # ENDED), and the two disagree in practice.
+            self._best_method = method
 
         # `_path_history` is retained purely for diagnostics/extras -- NOT
         # used to fire convergence. Empirically (30-OD-pair freeflow
@@ -380,6 +416,7 @@ class PhysarumRouter(Router):
             "iteration": self._iteration,
             "best_path": list(self._best_path) if self._best_path is not None else None,
             "best_cost": self._best_cost,
+            "best_path_extraction_method": self._best_method,
         }
 
     def load_state(self, state: dict[str, Any]) -> None:
@@ -393,6 +430,9 @@ class PhysarumRouter(Router):
         bp = state.get("best_path")
         self._best_path = list(bp) if bp is not None else None
         self._best_cost = state.get("best_cost")
+        # Restored with the best path it describes, so provenance can never
+        # be left pointing at a path this instance did not load.
+        self._best_method = state.get("best_path_extraction_method")
 
     # -- Reporting helpers ---------------------------------------------------
 
@@ -408,7 +448,29 @@ class PhysarumRouter(Router):
         return len(self._solve_times)
 
     def last_extraction_method(self) -> str | None:
+        """Which extraction method fired on the MOST RECENT step() -- i.e. how
+        the run ended. Not necessarily the method that produced the reported
+        path; see `best_path_extraction_method`."""
         return self._last_method
+
+    def best_path_extraction_method(self) -> str | None:
+        """Which extraction method produced the path currently held in
+        `best_path()` / `best_cost()` -- i.e. where the REPORTED answer came
+        from (Phase 8b).
+
+        This is the figure Phase 9 needs to caveat Physarum's stretch
+        honestly. `best_cost` is a minimum over every iteration and every
+        extraction method, so the winning path can come from
+        ``theta_subgraph_fallback`` or from ``full_graph_fallback`` -- and
+        the latter is plain Dijkstra on the full graph, so a Physarum stretch
+        of exactly 1.0 attributed to it means "Dijkstra's answer, obtained
+        via the fallback", not "the max-flux walk found the optimum". Phase
+        8a measured this on 3 of 6 undisrupted real-graph pairs even though
+        the flux walk succeeded on 34-56 of their iterations.
+
+        None before the first successful extraction (and after a disruption
+        resets the tracker), exactly like `best_path()`."""
+        return self._best_method
 
     def active_component(self) -> tuple[int, int]:
         """``(active_nodes, total_nodes)`` for the component the Laplacian is
@@ -569,6 +631,10 @@ class PhysarumRouter(Router):
         self._solve_times: list[float] = []
         self._extraction_counts: dict[str, int] = {}
         self._last_method: str | None = None
+        # Provenance of `_best_path`/`_best_cost`, reset alongside them: a
+        # retained method would attribute the new run's best path to the old
+        # run's extraction.
+        self._best_method: str | None = None
 
     # -- Per-iteration Laplacian solve ---------------------------------------
 

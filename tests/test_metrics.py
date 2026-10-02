@@ -575,6 +575,112 @@ def test_as_scenario_spec_accepts_the_shapes_phase_7_might_hand_over():
 
 
 # ==========================================================================
+# PHASE 8B: best_path_extraction_method
+#
+# Two extraction columns, deliberately not one. `extraction_method` says how
+# the run ENDED; `best_path_extraction_method` says where the path the row
+# REPORTS came from. Physarum's `best_cost` is a min over every iteration and
+# every extraction method, and one of its fallbacks is plain Dijkstra on the
+# full graph, so without the second column a reported stretch of exactly 1.0
+# is ambiguous between "the model found the optimum" and "Dijkstra's answer,
+# obtained via the fallback" (Phase 8a measured the latter on 3 of 6
+# undisrupted pairs).
+# ==========================================================================
+
+
+def test_best_path_extraction_method_is_nullable_and_distinct_from_extraction_method():
+    assert "best_path_extraction_method" in S.DIAGNOSTIC_FIELDS
+    assert "extraction_method" in S.DIAGNOSTIC_FIELDS
+    field = S.RESULT_SCHEMA.field("best_path_extraction_method")
+    assert field.type == pa.string() and field.nullable
+
+    # ACO / classical rows leave it null -- that is what null MEANS here
+    # ("this algorithm has no path-extraction step"), and it must validate.
+    S.validate(minimal_record(algorithm="dijkstra"))
+    S.validate(minimal_record(algorithm="astar"))
+    S.validate(minimal_record(algorithm="aco", ant_completion_rate=0.8))
+    for rec in (minimal_record(algorithm="aco"), disruption_record(algorithm="dijkstra")):
+        assert rec.best_path_extraction_method is None
+        assert S.validate(rec)["best_path_extraction_method"] is None
+
+    # And a Physarum-shaped row carrying both, with DIFFERENT values, is valid.
+    rec = minimal_record(
+        algorithm="physarum",
+        extraction_method="full_graph_fallback",
+        best_path_extraction_method="max_flux_walk",
+    )
+    data = S.validate(rec)
+    assert data["extraction_method"] == "full_graph_fallback"
+    assert data["best_path_extraction_method"] == "max_flux_walk"
+
+
+def test_router_diagnostics_reads_both_extraction_methods_duck_typed():
+    """`metrics/` must not import `physarum.py`, so both columns are read off
+    whatever accessors the router happens to expose. A router with neither
+    leaves both null."""
+
+    class FakePhysarum:
+        def last_extraction_method(self):
+            return "full_graph_fallback"
+
+        def best_path_extraction_method(self):
+            return "theta_subgraph_fallback"
+
+    diag = C.router_diagnostics(FakePhysarum())
+    assert diag["extraction_method"] == "full_graph_fallback"
+    assert diag["best_path_extraction_method"] == "theta_subgraph_fallback"
+
+    diag = C.router_diagnostics(StubRouter([[0, 1, 2, 5]]))
+    assert diag["extraction_method"] is None
+    assert diag["best_path_extraction_method"] is None
+
+    # A diagnostic accessor that blows up must never break a run.
+    class Exploding:
+        def last_extraction_method(self):
+            raise RuntimeError("boom")
+
+        def best_path_extraction_method(self):
+            raise RuntimeError("boom")
+
+    diag = C.router_diagnostics(Exploding())
+    assert diag["extraction_method"] is None
+    assert diag["best_path_extraction_method"] is None
+
+
+def test_run_and_collect_populates_best_path_extraction_method_for_physarum():
+    """End to end: a real Physarum run through the harness lands the provenance
+    of the REPORTED path in the row, so Phase 9 can separate genuine flux-walk
+    wins from fallback-derived ones."""
+    from bioroute.algorithms.physarum import PhysarumRouter
+
+    G = toy_graph()
+    snap = toy_snapshot(G)
+    router = PhysarumRouter(Path(__file__).resolve().parent.parent / "configs" / "physarum.yaml")
+    rec = C.run_and_collect(
+        router, G, 0, 5, snap, None, budget=60, warm=False, seed=0,
+        config_hash="phase8b",
+    )
+    S.validate(rec)
+    assert rec.failed is False, rec.failure_reason
+    assert rec.best_path_extraction_method in (
+        "max_flux_walk",
+        "theta_subgraph_fallback",
+        "full_graph_fallback",
+    )
+    # It must be a method the run actually used, and it must describe the
+    # REPORTED path -- re-costing the router's best path under the same
+    # snapshot has to reproduce the row's `path_cost`.
+    assert rec.best_path_extraction_method in router.extraction_counts()
+    assert rec.path_cost == pytest.approx(snap.cost_of_path(G, router.best_path()))
+    # A classical router on the same cell leaves the column null.
+    rec_d = C.run_and_collect(
+        DijkstraRouter(), G, 0, 5, snap, None, budget=1, warm=False, seed=0,
+        config_hash="phase8b",
+    )
+    assert rec_d.best_path_extraction_method is None
+
+
+# ==========================================================================
 # Parquet write path
 # ==========================================================================
 

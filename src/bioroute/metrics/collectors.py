@@ -237,22 +237,39 @@ def router_diagnostics(router: Router) -> dict[str, Any]:
     couple the schema to two concrete implementations). Anything missing
     stays null, which is exactly what the schema says those columns mean.
 
-    * `extraction_method` -- Physarum's `last_extraction_method`.
+    * `extraction_method` -- Physarum's `last_extraction_method`: the method
+      that fired on the LAST iteration, i.e. how the run ended.
+    * `best_path_extraction_method` -- Physarum's
+      `best_path_extraction_method`: the method that produced the path the
+      row actually REPORTS in `path_cost`/`stretch`. Not derivable from the
+      column above, which disagreed with it on 1 of 6 pairs measured in Phase
+      8a; and because one Physarum fallback is plain Dijkstra on the full
+      graph, this column is what separates a genuine flux-walk stretch of 1.0
+      from "Dijkstra's answer, obtained via the fallback". See the schema
+      docstring.
     * `ant_completion_rate` -- ACO's completed/total ant counters. These are
       cumulative from `prepare()` onward and are NOT reset by
       `apply_disruption(warm=True)`, so on a disruption run the rate spans
       the initial solve and the recovery together.
     """
-    out: dict[str, Any] = {"extraction_method": None, "ant_completion_rate": None}
+    out: dict[str, Any] = {
+        "extraction_method": None,
+        "best_path_extraction_method": None,
+        "ant_completion_rate": None,
+    }
 
-    method = getattr(router, "last_extraction_method", None)
-    try:
-        if callable(method):
-            method = method()
-        if isinstance(method, str) and method:
-            out["extraction_method"] = method
-    except Exception:  # diagnostics must never break a run
-        pass
+    for column, accessor in (
+        ("extraction_method", "last_extraction_method"),
+        ("best_path_extraction_method", "best_path_extraction_method"),
+    ):
+        method = getattr(router, accessor, None)
+        try:
+            if callable(method):
+                method = method()
+            if isinstance(method, str) and method:
+                out[column] = method
+        except Exception:  # diagnostics must never break a run
+            pass
 
     try:
         total = getattr(router, "_ants_total", None)
@@ -442,6 +459,7 @@ def run_and_collect(
 
     diagnostics = router_diagnostics(router)
     record.extraction_method = diagnostics["extraction_method"]
+    record.best_path_extraction_method = diagnostics["best_path_extraction_method"]
     record.ant_completion_rate = diagnostics["ant_completion_rate"]
 
     if record.failed:

@@ -32,8 +32,29 @@ Three nullability tiers, enforced by `validate()`:
      For a control scenario (S0) these MUST be null -- there was no
      disruption, so a zero would be a lie that averages into the results.
 
-  Per-algorithm diagnostics (`extraction_method`, `ant_completion_rate`)
-  are null wherever they do not apply, by construction.
+  Per-algorithm diagnostics (`extraction_method`,
+  `best_path_extraction_method`, `ant_completion_rate`) are null wherever
+  they do not apply, by construction. Only Physarum populates the two
+  extraction columns; for ACO and the classical routers they are null, and
+  null there means "this algorithm has no path-extraction step", not
+  "unknown".
+
+  The two extraction columns are NOT redundant (Phase 8b):
+
+    * `extraction_method` -- the method that fired on the router's LAST
+      iteration, i.e. how the run ended.
+    * `best_path_extraction_method` -- the method that produced the path
+      actually REPORTED in `path_cost` / `stretch`, recorded at the moment
+      `best_cost` last improved.
+
+  Physarum's `best_cost` is a minimum over every iteration and every
+  extraction method, and one of its fallbacks (`full_graph_fallback`) is
+  plain Dijkstra on the full graph. So without the second column a reported
+  Physarum stretch of exactly 1.0 is ambiguous between "the max-flux walk
+  found the optimum" and "Dijkstra's answer, obtained via the fallback" --
+  Phase 8a measured the latter on 3 of 6 undisrupted pairs, and measured the
+  two columns disagreeing on 1 of 6. Phase 9 must caveat Physarum's stretch
+  figures using this column; see `docs/tuning/physarum_extraction_provenance.md`.
 
 A note on the two first-valid-path columns, because the distinction is the
 project's central speed-vs-quality question (CLAUDE.md honest-reporting
@@ -216,6 +237,7 @@ class ResultRecord:
 
     # -- per-algorithm diagnostics (null where inapplicable) ---------------
     extraction_method: str | None = None
+    best_path_extraction_method: str | None = None
     ant_completion_rate: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -267,6 +289,7 @@ RECOVERY_FIELDS: tuple[str, ...] = (
 
 DIAGNOSTIC_FIELDS: tuple[str, ...] = (
     "extraction_method",
+    "best_path_extraction_method",
     "ant_completion_rate",
 )
 
@@ -319,6 +342,7 @@ RESULT_SCHEMA = pa.schema(
         pa.field("post_disruption_cost", pa.float64(), nullable=True),
         pa.field("post_disruption_stretch", pa.float64(), nullable=True),
         pa.field("extraction_method", pa.string(), nullable=True),
+        pa.field("best_path_extraction_method", pa.string(), nullable=True),
         pa.field("ant_completion_rate", pa.float64(), nullable=True),
     ]
 )

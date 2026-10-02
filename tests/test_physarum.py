@@ -236,6 +236,192 @@ def test_extraction_method_recorded_every_step():
 
 
 # --------------------------------------------------------------------------
+# PHASE 8B: provenance of the REPORTED path.
+#
+# `best_cost` is a min over every iteration AND every extraction method, so
+# the path a run reports can come from a fallback -- and `full_graph_fallback`
+# IS plain Dijkstra on the full graph, which makes a reported stretch of 1.0
+# ambiguous unless the producing method is recorded. Phase 8a measured a
+# fallback setting `best_cost` on 3 of 6 undisrupted real pairs (while the
+# flux walk succeeded on 34-56 iterations), and measured the LAST iteration's
+# method disagreeing with the winning one on 1 of 6.
+# --------------------------------------------------------------------------
+
+
+def _oneway_trap_graph() -> nx.MultiDiGraph:
+    """A-B-C-E (slow, 3 hops) plus a fast A-D spur whose D->E leg exists ONLY
+    as the one-way E->D.
+
+    The undirected model therefore sees a cycle and pushes current down the
+    cheap A-D branch, so the greedy max-flux walk prefers D -- and then dead
+    ends, because no directed D->E edge exists and A is already visited. This
+    is the real-network failure mode the fallback exists for (the undirected
+    relaxation's preferred flow direction is not a legal directed move), so
+    every iteration's path comes from a fallback, with no mocking.
+    """
+    G = nx.MultiDiGraph()
+    coords = {
+        "A": (0.0000, 0.0000),
+        "B": (0.0010, 0.0000),
+        "C": (0.0020, 0.0000),
+        "E": (0.0030, 0.0000),
+        "D": (0.0015, 0.0010),
+    }
+    for n, (y, x) in coords.items():
+        G.add_node(n, y=y, x=x)
+
+    def add(u, v, tt, both=True):
+        G.add_edge(u, v, key=0, length=100.0, speed_kph=36.0, travel_time=tt)
+        if both:
+            G.add_edge(v, u, key=0, length=100.0, speed_kph=36.0, travel_time=tt)
+
+    add("A", "B", 10.0)
+    add("B", "C", 10.0)
+    add("C", "E", 10.0)
+    add("A", "D", 1.0)
+    add("E", "D", 1.0, both=False)  # one-way: E->D exists, D->E does not
+    return G
+
+
+_TRAP_OPTIMAL_COST = 30.0  # A-B-C-E; the A-D branch is not a legal route at all
+
+
+def test_best_path_extraction_method_is_max_flux_walk_when_the_walk_wins():
+    """On the plain toy graph the walk succeeds on every iteration, so the
+    reported path is a genuine flux-walk result -- not a fallback."""
+    G = _toy_graph()
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    assert router.best_path_extraction_method() is None, "null before any extraction"
+    result = _run(router)
+
+    assert result.path == ["A", "B", "C", "D", "E"]
+    assert router.extraction_counts() == {"max_flux_walk": router.n_solves()}
+    assert router.best_path_extraction_method() == "max_flux_walk"
+    assert router.last_extraction_method() == "max_flux_walk"
+
+
+def test_best_path_extraction_method_reports_the_fallback_that_won():
+    """When a fallback produced the path that set `best_cost`, that is what is
+    reported -- so a stretch of 1.0 here is attributable to Dijkstra-via-the-
+    fallback rather than to the model's own walk."""
+    G = _oneway_trap_graph()
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    result = _run(router)
+
+    counts = router.extraction_counts()
+    assert "max_flux_walk" not in counts, (
+        f"the walk must dead-end on this graph; got {counts}"
+    )
+    assert result.cost == pytest.approx(_TRAP_OPTIMAL_COST, rel=1e-9)
+    assert router.best_path_extraction_method() in (
+        "theta_subgraph_fallback",
+        "full_graph_fallback",
+    )
+    assert router.best_path_extraction_method() in counts
+
+
+def test_best_path_extraction_method_is_not_the_final_iterations_method():
+    """The field tracks the method in force when `best_cost` LAST IMPROVED,
+    not the method the run happened to end on. Measured divergence, no mocks:
+    on the one-way-trap graph the winning path comes from the theta subgraph
+    early (while D is still above theta) and the run ends on the full-graph
+    fallback once the losing tubes have atrophied below theta."""
+    G = _oneway_trap_graph()
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    _run(router)
+
+    assert router.best_path_extraction_method() == "theta_subgraph_fallback"
+    assert router.last_extraction_method() == "full_graph_fallback"
+    assert router.best_path_extraction_method() != router.last_extraction_method()
+
+
+def test_best_path_extraction_method_ignores_later_worse_walks():
+    """The Phase 8a shape exactly: a fallback sets `best_cost` on iteration 1
+    and the max-flux walk then succeeds on every later iteration but never
+    beats it. The reported provenance must stay with the fallback, even though
+    `extraction_counts()` is dominated by the walk and the run ENDS on it.
+
+    Extraction is scripted here (the surrounding tests cover the unmocked
+    case) so the ordering under test -- improvement early, success late -- is
+    pinned rather than left to whatever the relaxation happens to do."""
+    G = _toy_graph()
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+
+    good = (["A", "B", "C", "D", "E"], 1.0, "theta_subgraph_fallback")
+    worse = (["A", "E"], 2.0, "max_flux_walk")
+    calls = {"n": 0}
+
+    def scripted(_p, _w):
+        calls["n"] += 1
+        return good if calls["n"] == 1 else worse
+
+    router._extract_path = scripted  # instance-level override, test only
+    for _ in range(6):
+        router.step()
+
+    assert router.best_cost() == pytest.approx(1.0)
+    assert router.best_path() == ["A", "B", "C", "D", "E"]
+    assert router.last_extraction_method() == "max_flux_walk"
+    assert router.extraction_counts() == {
+        "theta_subgraph_fallback": 1,
+        "max_flux_walk": 5,
+    }
+    assert router.best_path_extraction_method() == "theta_subgraph_fallback"
+
+
+def test_best_path_extraction_method_resets_with_the_best_path_tracker():
+    """A disruption resets `best_path`/`best_cost` (a pre-disruption best may
+    contain a severed edge), so the provenance must reset with them -- a
+    retained method would attribute the new run's answer to the old run's
+    extraction."""
+    G = _toy_graph_with_spur(1)
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    _run(router)
+    assert router.best_path_extraction_method() is not None
+
+    router.apply_disruption([("D", "F", 0), ("F", "D", 0)], warm=True)
+    assert router.best_path() is None
+    assert router.best_path_extraction_method() is None, (
+        "provenance must not survive the reset of the path it describes"
+    )
+
+    _run(router)
+    assert router.best_path_extraction_method() in router.extraction_counts()
+
+
+def test_best_path_extraction_method_is_carried_in_state():
+    """`state()` already carries `best_path`/`best_cost`, so it carries their
+    provenance too -- a checkpoint that restored the path without the method
+    would report an answer whose origin is unknown. (`load_state` is exercised
+    with int node ids elsewhere; it parses its `D_by_pair` keys as ints, so it
+    cannot be round-tripped on this string-labelled toy graph.)"""
+    G = _toy_graph()
+    snap = _toy_snapshot(G)
+    router = _make_router("tero")
+    router.prepare(G, "A", "E", snap, seed=0)
+    _run(router)
+
+    saved = router.state()
+    assert saved["best_path_extraction_method"] == "max_flux_walk"
+    assert saved["best_path"] == router.best_path()
+
+    other = _make_router("tero")
+    other.prepare(G, "A", "E", snap, seed=0)
+    other.load_state({k: v for k, v in saved.items() if k != "D_by_pair"})
+    assert other.best_path_extraction_method() == "max_flux_walk"
+
+
+# --------------------------------------------------------------------------
 # Real network: exit criterion (>=80% exact Dijkstra match, freeflow, 30 OD
 # pairs) + BPR-heavy stretch (measured, no target).
 # --------------------------------------------------------------------------
