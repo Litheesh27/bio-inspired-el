@@ -463,8 +463,35 @@ that file has the detail.
       seed, ...)` has `scenario_id` FIFTH, and callers must check `dis.ok`
       before use — passing a `ok=False` Disruption through yields
       `SchemaViolation: scenario 'S4' recorded 0 removed edges`.
-- [ ] Phase 9 — Analysis, figures, and results dashboard (7 figures + published
-      Artifact dashboard).
+- [x] Phase 9 — Analysis, figures, and results dashboard. COMPLETE.
+      All 7 figures regenerate from the Parquet; `docs/results/summary.md` holds
+      7 tables with CIs on every number; the dashboard is published at
+      https://claude.ai/artifact/2ZPysszxaGhKW2a5712vbH (private to the owner).
+      **9a** (`viz/stats.py`, `viz/figures.py`, `scripts/04_make_figures.py`):
+      figures 2/3/4/7 + stats bundle. Paired Wilcoxon on identical
+      (od, scenario, traffic, seed) tuples; two-stage clustered bootstrap
+      (resample OD pairs, then seeds within them, seed 20260101, 10k draws).
+      Pre-disruption quality is DEDUPLICATED on the initial solve — it is
+      identical across all 7 scenarios and both start modes, so pooling raw rows
+      would count one solve up to 13x and shrink every CI by bookkeeping alone.
+      **9b** (`viz/traces.py`, `viz/maps.py`, `scripts/06_make_traces.py`):
+      figures 1/5/6. The Parquet has NO per-iteration traces and NO path
+      geometry, so these three are regenerated under the sweep's own config and
+      seeds and are labelled as such in every caption. Cross-check vs the
+      Parquet: **64/64 values match to 1e-6**, ACO bit-for-bit per seed.
+      **9c** (`viz/export.py`, `scripts/05_export_web.py`, `web/`): dashboard.
+      All NUMBERS come from the Parquet (complete coverage); only route GEOMETRY
+      is regenerated (30 pairs x S1/S4/S6 at heavy, 89/90 cells — the 1 skip is
+      the same infeasible S4 cell the sweep itself failed on). 1.90 MB bundle.
+      FIG 1 IS THE BEST SINGLE PIECE OF EVIDENCE FOR THE PROVENANCE FINDING: in
+      2 of 3 panels Physarum's with-fallback curve sits at stretch 1.0 from
+      iteration 1 — it was Dijkstra's answer before the model did any work.
+      Figure 6 caption GOTCHA: "61% of SUMO edges see no vehicle" is a
+      per-SUMO-EDGE statistic. Per GRAPH edge it is 24% (light) / 12% (heavy) —
+      stating the 61% per graph edge would be wrong by ~5x. netconvert splits
+      what OSMnx merges, so a graph edge reads as congested if ANY of its
+      segments carried traffic. The two counts match the snapshots' own
+      `n_fallback_edges` exactly.
       **HARD REQUIREMENT: never pool Physarum's stretch across provenance.**
       Report a model-only series (`max_flux_walk`) and a with-fallback series,
       separately and labelled, using `best_path_extraction_method` and
