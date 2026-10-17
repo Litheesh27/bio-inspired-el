@@ -19,3 +19,7 @@ cache/
 # Partial/resume artifacts stay ignored.
 !data/results/final_*.parquet
 
+
+# Phase 9 derived stats bundle: small, cheap to regenerate, but it is the
+# computed basis for docs/results/summary.md and the dashboard, so track it.
+!data/results/stats_*.json

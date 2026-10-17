@@ -301,10 +301,32 @@ that file has the detail.
       so pooling hides the difference completely. This retires the Phase 8d
       speculation that sumo_speeds would be kinder to the walk: it is not
       (16.7-23.3% here vs Phase 8c's 16.7-46.7% on config_speeds).
-      **RESULT 4 — warm start improves the model's OWN extraction QUALITY, not
-      just its speed:** `post_disruption_walk_stretch` median 1.062 warm vs
-      1.199 cold (n=130/213). A retained conductivity field yields a better
-      max-flux walk, independent of the iteration-count saving in Result 1.
+      **RESULT 4 — CORRECTED. The original claim here was WRONG, and the sign
+      REVERSES once the comparison is paired.** It first read "warm start
+      improves the model's own extraction quality: `post_disruption_walk_stretch`
+      median 1.062 warm vs 1.199 cold (n=130/213)". That is an UNPAIRED
+      comparison across two differently-composed samples, and the unequal n is
+      the tell — it should have stopped me. The warm max-flux walk COMPLETES a
+      path on only 36.3% of recoveries vs cold's 59.5%, so the two medians are
+      taken over different cells. Paired on the 126 cells where BOTH complete:
+      warm 1.0587 vs **cold 1.0127**, cold better on 44 and warm on 12,
+      Wilcoxon p=2.7e-04. The 87 cells only COLD completes have median 1.371 and
+      are exactly what inflated cold's unpaired figure.
+      Pairing verified sound: pre-disruption `walk_best_stretch` is byte-identical
+      warm vs cold (max |diff| 0.0e+00 over 250 cells), as it must be — before
+      the disruption the two modes are the same run.
+      **HONEST STATEMENT: warm start makes the walk LESS LIKELY TO COMPLETE AT
+      ALL, and on cells where both complete, cold's walk is marginally BETTER.
+      Warm start's robust win is SPEED (Result 1), not extraction quality.**
+      Mechanism (plausible, not yet tested): the retained conductivity field is
+      tuned to the OLD optimum, so after a closure it keeps driving flux down
+      now-severed corridors and the walk dead-ends; a cold field starts uniform
+      and explores freely. A test of that mechanism is an open option, not a
+      finding.
+      **STANDING RULE THIS COST US: in this project, never compare two medians
+      whose n differ without first checking whether the samples are the same
+      cells. The sweep is fully paired BY CONSTRUCTION, so an unpaired
+      comparison is always a choice, and usually the wrong one.**
       Classical sanity: Dijkstra and A* are at stretch 1.000 and
       post-disruption stretch 1.000 on every scenario, recovering in 1 iteration
       / 0.031 s and 0.027 s — the honest-reporting baseline stands.
