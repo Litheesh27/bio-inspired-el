@@ -221,14 +221,17 @@ that file has the detail.
          is weight-dependent.
       A test asserts ZERO of 60 real-graph disruptions leave the optimal path
       unchanged — the null-result trap this phase exists to avoid.
-- [~] Phase 8 — Runner BUILT and verified; THE FULL SWEEP HAS NOT BEEN RUN.
+- [x] Phase 8 — Runner built, verified, and THE FULL SWEEP IS COMPLETE (see Phase 8e).
       Matrix: **420 cells, 5,520 runs** (aco 3,900 / physarum 780 / dijkstra 420
       / astar 420) over 7 scenarios x {sumo light, sumo heavy} x {warm, cold},
       `sumo_speeds` baseline. 30 OD pairs, draw seed 8080, stratified 10/10/10
       by straight-line distance, **verified zero overlap** with the ACO tuning
       draw (2024) and the Phase 4d criterion draw (4242).
       Projected **34.2 h serial, ~2.4 h at 14 workers** (lower bound, perfect
-      scaling assumed — never quote it as a performance figure).
+      scaling assumed — never quote it as a performance figure). ACTUAL: 10.3 h
+      of wall-clock at 14 workers for the 404 remaining cells, i.e. the
+      perfect-scaling lower bound understated the real run by ~4x. Logged here
+      as a standing reminder of what that caveat is worth.
       Seeds per algorithm: aco 5, physarum 1, classical 1. **Physarum's single
       seed is MEASURED, not assumed** — 5 OD pairs x 3 initialisation seeds gave
       costs identical to 4 d.p. (0/5 varied), because conductivities initialise
@@ -241,6 +244,70 @@ that file has the detail.
       a DIFFERENT hash and a FileNotFoundError whose message wrongly suggests
       re-running `scripts/02_run_sumo.py`. Use `netconvert_flags_for(cfg)` from
       `experiments/runner.py`, or read the flags from `configs/sumo.yaml`.
+- [x] Phase 8e — **THE FULL SWEEP IS RUN AND COMMITTED.**
+      `data/results/final_14a535c02b83.parquet` (416 KB, 5,520 rows x 38 cols,
+      baseline_hash 285f18f9a225). This file IS the experimental evidence; every
+      Phase 9 number must derive from it and nothing else.
+      Integrity: 5,520 unique `run_id`, **0 duplicates**; per-algorithm counts
+      exactly as designed (aco 3,900 / physarum 780 / dijkstra 420 / astar 420);
+      30 OD pairs x 7 scenarios x 2 traffic levels x {warm,cold} = 780 cells.
+      **28 failed rows (0.51%), ALL ONE CAUSE:** "scenario S4 infeasible: no
+      connectivity-preserving choice of 5 path edge(s) in 50 attempts" — 2 cells
+      where Phase 7 could not cut 5 path edges without disconnecting s-t. That
+      is the fragility result, not a bug. Exit criterion PASS (<5%).
+      Invariants re-verified on the real data, 0 violations of any:
+      `stretch` (n=5,492), `post_disruption_stretch` (n=5,012),
+      `walk_best_stretch` (n=542), `post_disruption_walk_stretch` (n=343) all
+      >= 1.0, and `walk_best_cost >= path_cost` on all 542 rows where both exist.
+      **RESULT 1 — warm start's real shape is BETTER than "2.3x", and the 24x
+      figure is an ARTIFACT. DO NOT REPORT 24x.** Physarum recovery is BIMODAL
+      under warm start: **48.3% of warm recoveries converge in EXACTLY 1
+      iteration**, while cold start never does — cold's MINIMUM is 73 iterations
+      (n=358 each, cold 25-50-75th = 90/98/111). The retained conductivity field
+      already encodes a viable detour, so one adaptation step suffices. Because
+      the warm distribution has modes at 1 and ~50, the ratio of medians (98 vs
+      42 iters; 5.66 vs 0.235 s = "24x") is not a valid statistic.
+      **Correct PAIRED numbers on identical (od, scenario, traffic, seed):
+      median ratio cold/warm = 2.97x iterations (warm faster on 350/358,
+      Wilcoxon p=3.2e-59) and 6.87x wall-clock (336/358, p=9.0e-52).**
+      Per-iteration cost is IDENTICAL warm vs cold (median 0.0511 vs 0.0538
+      s/iter), which is the proof that the entire gain is fewer iterations and
+      not cheaper ones — exactly the claim the project set out to test.
+      **RESULT 2 — THE "CONGESTION HELPS ACO" FINDING DOES NOT SURVIVE SUMO.
+      It REVERSES.** On S0, ACO's within-10% rate is light 81.3% vs heavy 58.0%,
+      and PAIRED on the same (od, seed) heavy is significantly WORSE (Wilcoxon
+      p=3.6e-02; 37 pairs pass only under light vs 2 only under heavy). Phase 4/4d
+      measured the opposite direction on **BPR / config_speeds**; the sweep uses
+      **real SUMO / sumo_speeds**. So the sign of the congestion effect on ACO is
+      a property of the CONGESTION MODEL, not of ACO. This is direct evidence for
+      Phase 2d's warning that BPR and SUMO "bracket rather than agree and must
+      not be merged into a single congestion level".
+      **CONSEQUENCE: Phase 8c's "the two bio-inspired methods fail in OPPOSITE
+      directions under congestion" is NO LONGER SUPPORTED on the sweep's own
+      data — under SUMO, BOTH degrade.** Phase 9 must either drop that framing
+      or state it as BPR-specific. Do not carry it forward unqualified.
+      Also: ACO's exact-match (stretch == 1.0) share is only 43-44%, and its
+      median stretch is 1.005 (light) / 1.021 (heavy); per-seed within-10% spread
+      is tight (0.567-0.633 heavy, 0.767-0.833 light), so this is not a seed fluke.
+      **RESULT 3 — Physarum's pooled competence is CONFIRMED to be mostly the
+      fallback's, on the sweep's own graph.** S0 pooled exact-match 90.0% (heavy)
+      / 86.7% (light) — reproducing Phase 5's 87% — against **walk-only exact
+      match of just 23.3% / 16.7%**, with the walk producing ANY path on 69.8%
+      of all Physarum rows. Reported-path provenance over all 776 successful
+      Physarum rows: `full_graph_fallback` 315 (40.6%), `max_flux_walk` 232
+      (29.9%), `theta_subgraph_fallback` 229 (29.5%) — i.e. **~70% of Physarum's
+      reported paths did NOT come from its own extraction**, and the median
+      stretch is exactly 1.000 within every one of the three provenance classes,
+      so pooling hides the difference completely. This retires the Phase 8d
+      speculation that sumo_speeds would be kinder to the walk: it is not
+      (16.7-23.3% here vs Phase 8c's 16.7-46.7% on config_speeds).
+      **RESULT 4 — warm start improves the model's OWN extraction QUALITY, not
+      just its speed:** `post_disruption_walk_stretch` median 1.062 warm vs
+      1.199 cold (n=130/213). A retained conductivity field yields a better
+      max-flux walk, independent of the iteration-count saving in Result 1.
+      Classical sanity: Dijkstra and A* are at stretch 1.000 and
+      post-disruption stretch 1.000 on every scenario, recovering in 1 iteration
+      / 0.031 s and 0.027 s — the honest-reporting baseline stands.
 - [x] Phase 8a — Physarum singular-Laplacian degeneracy: diagnosed, fixed.
       **THE SWEEP IS UNBLOCKED.** Mechanism was STRANDED COMPONENTS, not
       conductivity decay: `p_sink = 0` grounds exactly ONE component, Phase 7
