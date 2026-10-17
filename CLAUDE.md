@@ -449,7 +449,23 @@ that file has the detail.
       `walk_best_stretch`. A pooled Physarum stretch of 1.0 can mean "Dijkstra's
       answer via the fallback" (see Phase 8b/8c), and pooling it would make the
       Physarum-vs-Dijkstra comparison partly circular — the single most
-      attackable claim in the writeup.
+      attackable claim in the writeup. Phase 8e measured exactly this on the
+      sweep: 90% pooled exact-match vs 23.3% walk-only, with median stretch
+      1.000 in ALL THREE provenance classes, so pooling erases the whole effect.
+      **THREE MORE HARD REQUIREMENTS, all from Phase 8e:**
+      1. **Never report Physarum's warm-vs-cold recovery as a ratio of medians**
+         — that yields a bogus "24x". The distribution is BIMODAL: 48.3% of warm
+         recoveries take exactly 1 iteration. Report the PAIRED median ratio
+         (2.97x iterations / 6.87x wall-clock) and SHOW the bimodality; "warm
+         start recovers in a single iteration on half of all disruptions, which
+         cold start never does" is both truer and stronger than any ratio.
+      2. **Do not repeat "the two methods fail in opposite directions under
+         congestion".** It held on BPR and REVERSES on SUMO (ACO within-10%:
+         81.3% light -> 58.0% heavy, paired p=0.036). Every congestion-direction
+         claim must name its congestion model.
+      3. Use MEDIAN + IQR and PAIRED tests keyed on identical
+         (od, scenario, traffic, seed) tuples — the sweep is fully paired by
+         construction, so an unpaired test discards the design.
 
 ## Repo layout
 
