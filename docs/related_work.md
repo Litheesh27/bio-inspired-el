@@ -28,6 +28,25 @@ for:
 - any bio-inspired routing work on an *Indian* city road network,
 - bio-inspired routing + road closure recovery + SUMO in one study.
 
+**NAME THE PRIOR THREE-WAY COMPARISON EXPLICITLY, AND NEVER CLAIM "THREE-WAY"
+AS THE NOVELTY.** Zhang, Wang, Adamatzky, Chan, Mahadevan & Deng (Sci. World
+J., 2014 — section 1 below) already benchmark Physarum against **both ACO and
+Dijkstra**. The combination of the three algorithms is therefore NOT new, and a
+reviewer who knows that paper will reach for it first. What is new is the
+SUBSTRATE and the MEASUREMENT: a real, directed, organically-grown road network
+with one-ways and mean out-degree 2.46, simulator-generated congestion at two
+demand levels, and recovery from closures — against their Erdos-Renyi random
+graphs with static integer weights and no disruption. Two further axes are
+untouched by them and by everyone else found so far: **no Physarum + SUMO work
+exists at all**, and **no ACO paper found reports recovery after a closure
+against a Dijkstra baseline**.
+
+The safe formulation, which survives every paper read so far:
+
+> the first three-way benchmark of classical, ant-colony and Physarum routing
+> on a real *road* network with directed constraints and simulator-generated
+> congestion, measuring recovery from closures as well as path quality.
+
 **Caveat on the strength of this check.** Four searches is a sanity check, not
 a systematic review. It does not cover non-indexed venues, Indian journals and
 conference proceedings that index poorly, or theses. Before submission this
@@ -114,9 +133,70 @@ Minor, worth a footnote only: the paper says "we make the network fully
 connected" while Table 1 lists sparse edge counts (23 edges on 15 nodes, where
 complete would be 105), and does not reconcile the two.
 
-**STILL TO DO on this paper:** get the PDF and read the numbers off Figures 4,
-5 and 9 — the ACO accuracy curve in Figure 9 is the one number that would let
-us compare their ACO degradation directly against our tercile result.
+#### Figures 4, 5 and 9 — **READ 2026-10-18. ITEM CLOSED.**
+
+Not from the PDF: the figures are raster images, so PDF text extraction was
+never going to work. I downloaded the figure JPEGs that PMC serves alongside
+the article (`cdn.ncbi.nlm.nih.gov/pmc/blobs/2519/3984829/...`) and read them
+directly. Values below are read off the plotted points and are approximate to
+about +/- 0.02 on the accuracy axis.
+
+**FIGURE 9 — degree of accuracy vs number of nodes. THIS IS THE ONE THAT
+MATTERS, AND IT IS A DEFENSIVE RESULT FOR US.**
+
+| nodes | ~15 | 30 | 50 | 80 | 100 | 200 | 400 | 500 | 800 | 1000+ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ACO | 0.57 | 0.45 | 0.22 | 0.30 | 0.15 | 0.20 | 0.08 | 0.00 | 0.10 | **0.00** |
+| IPPA | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | **1.0** |
+| Dijkstra | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | **1.0** |
+
+ACO is flat at **exactly zero from 1,000 nodes through 2,000**, with 1,200,
+1,500, 1,800 and 2,000 all on the axis.
+
+**WHY THIS IS THE MOST USEFUL SINGLE NUMBER IN THE LITERATURE FOR US: IT
+PRE-EMPTS THE FIRST ATTACK ON OUR ACO RESULTS.** The obvious reviewer response
+to "ACO misses its exit criterion" and to any ACO-vs-Physarum gap is *your ACO
+was a strawman*. The only published three-way comparison of these same three
+algorithms reports its ACO at **0% optimal-path accuracy on 1,000-2,000-node
+graphs**. Ours, on a **2,856-node** real road network — larger than their
+largest, and far harder, being directed with mean out-degree 2.46 — reaches
+**43-44% exact match and 73.3-81.3% within 10% of optimal**. Our ACO is not a
+weak baseline; by the standard of the prior art it is a conspicuously strong
+one, and that is what licenses us to report its missed criterion as a finding
+about ACO rather than about our tuning.
+
+State it as a CONTRAST, never as a controlled comparison: different graph
+family (Erdos-Renyi vs road network), different edge-weight distribution
+(integers 1-100 vs congested travel times), and their "degree of accuracy" is
+an exact-optimum rate whose definition we are inferring. The direction and the
+order of magnitude are what carry.
+
+Their ACO parameters, for the record: alpha=2, beta=5, rho=0.1, colony size
+and iteration cap both equal to the node count. That last choice is likely
+much of the story — a 2,000-ant colony for 2,000 iterations on a sparse ER
+graph, with no backtracking construction and no dead-node handling, is close
+to the plain-MMAS configuration that gave us a **0% ant completion rate** in
+Phase 4 before backtracking construction was added.
+
+**FIGURE 5 — executing time (log axis).** At 2,000 nodes, roughly: ACO
+~1.5e5 s, IPPA ~4e2 s, Dijkstra ~1.5e1 s. **The ordering Dijkstra < Physarum <
+ACO is exactly ours**, which is worth one sentence of corroboration for the
+honest-reporting note. **The absolute values are not comparable to ours and
+must not be quoted as if they were:** their Dijkstra takes ~15 seconds on a
+2,000-node graph where ours takes ~31 ms on 2,856 nodes, a ~500x discrepancy
+that is about their implementation and timing protocol, not about Dijkstra.
+Use the ratios if anything: theirs is ACO/Dijkstra ~1e4 and Physarum/Dijkstra
+~27; ours is ACO/Dijkstra ~1,100-1,900 and Physarum/Dijkstra ~7.6 (warm).
+
+**FIGURE 4 — iterations, IPPA vs BPPA (the basic Physarum model).** IPPA is
+flat at ~25-28 iterations across the whole 15-2,000 range; BPPA rises from ~65
+to ~200, non-monotonically. **BPPA is the canonical model, which is what WE
+implement**, and our Physarum's iteration counts sit squarely in that band —
+median 98 to converge an undisrupted solve, 98 cold / 42 warm on recovery. So
+our implementation's convergence cost is consistent with the published basic
+model, which is a useful implementation-sanity citation. Their IPPA's flat ~25
+is a claim about their improvement, not about ours, and we do not implement
+IPPA.
 
 ### 1b. The same group's DIRECTED variant — **CHECKED. IT EXISTS.**
 
@@ -242,7 +322,7 @@ Physarum, no disruption recovery, no Indian city. These establish that ACO on
 OSM is not itself novel — our ACO is a *baseline within a comparison*, and the
 paper should say so plainly rather than overclaiming it.
 
-### 4. The ACO variant that contradicts our ablation
+### 4. The goal-directed ACO variant — **READ IN FULL. IT DOES NOT CONTRADICT US.**
 
 <https://www.pmf.ni.ac.rs/filomat-content/2018/32-5/32-5-13-6623.pdf> — a
 traffic-network ACO guiding ants with pheromone *plus a heuristic favouring
@@ -257,10 +337,48 @@ the bio-inspired routes are shorter in hops but slower.
 
 This is a concrete point of engagement rather than a conflict to hide: their
 result is plausibly correct on networks where congestion is not
-geometry-correlated. Reconciling the two is a genuine discussion-section
-contribution. **Check first whether their evaluation includes congestion at
-all** — if it is free-flow only, our results do not contradict theirs, they
-extend them, and the paper must say that instead.
+geometry-correlated.
+
+> **READ IN FULL 2026-10-18** (pypdf text extraction of the Filomat PDF).
+> Citation: Shuijian Zhang, Xuejun Liu, Meizhen Wang, "A Novel Ant Colony
+> Optimization Algorithm For The Shortest-path Problem In Traffic Networks",
+> *Filomat* **32**(5), 2018, 1619-1628, doi:10.2298/FIL1805619Z.
+
+**ANSWER: THEIR EVALUATION HAS NO CONGESTION, SO THERE IS NO CONTRADICTION TO
+RECONCILE.** The formalism is nominally time-varying — the network is defined as
+`G:{V, E, C, W(i,j)(t)}` where `W` is "a set of weights of the road arcs at
+time t ... measured using the travel time of the road arcs" — but **nothing in
+the evaluation ever varies with t**. The case study is a single 528-node /
+906-arc traffic network digitised in ArcGIS 10.2, with static per-arc travel
+times, no traffic demand, no simulator and no time-dependence exercised
+anywhere. **Our results EXTEND theirs rather than contradict them, and the
+paper must say exactly that.**
+
+**AND THE MECHANISM IS NOT THE SAME AS OUR ABLATION — I had this wrong.**
+Their orientation guidance is an **angular alignment** term, not a
+distance-to-target bound: `u_ij = 1/(1 + theta)` where theta is the included
+angle between the road arc and the straight line from the current node to the
+destination, entering the transition rule as a third factor with its own
+exponent gamma (`tau^alpha * eta^beta * u^gamma`, with gamma=2 for the novel
+variant and gamma=0 for the baseline). **Our ablation instead folds A*'s
+great-circle TIME bound into the visibility, `eta = 1/(tt + h(v))`.** Both
+steer ants toward the destination, but one scores direction and the other
+scores remaining cost, so our measured result is not a direct refutation of
+theirs even in spirit.
+
+Their visibility also differs from ours: `eta_ij = d_ij / w_ij`, i.e. the
+arc's **average speed**, where ours is `1/travel_time`. Worth one sentence,
+since it is a defensible alternative we did not try.
+
+**What they actually compare is novel ACO (gamma=2) against traditional ACO
+(gamma=0) on one network, "tested successfully several times", with Figure 7
+showing a single run. There is NO Dijkstra baseline, no optimality rate, no
+disruption and no recovery.** So the honest statement is: the only published
+evidence for orientation guidance helping on a traffic network is a
+single-network, congestion-free, ACO-vs-ACO comparison against no ground
+truth; we measure a related (not identical) goal-directed term under two
+congestion models and find it neutral under free-flow and harmful under BPR
+heavy, which is new information rather than a dispute.
 
 ### 5. Resilience / disruption baselines (non-bio-inspired)
 
@@ -418,9 +536,38 @@ congestion + disruption recovery.** Query 5 specifically found **no work
 combining Physarum with SUMO at all**, which is the strongest single support
 for the novelty claim.
 
-Still outstanding before submission: a database pass on IEEE Xplore, Scopus and
-Google Scholar, plus a forward-citation sweep of Zhang 2014 and the Tokyo rail
-paper, since anyone doing this work would likely cite one of them.
+### Second round (2026-10-18, after the three close reads)
+
+7. `forward citations Zhang Physarum shortest path algorithm road network
+   directed congestion benchmark 2020..2026`
+8. `ant colony optimization dynamic vehicle routing road network congestion
+   SUMO benchmark comparison Dijkstra recovery road closure`
+9. `Physarum shortest path "traffic network" redundant nodes ICSI 2021 ...
+   directed`
+
+**Result of query 8, and it is the one that matters for the recovery axis:
+several ACO-for-traffic papers do use SUMO and do compare against Dijkstra,
+but NONE reports recovery after a closure.** The nearest miss is an improved
+ACO for dynamic shortest-path problems (Springer LNCS, 2026,
+doi:10.1007/978-3-032-26319-3_12) whose abstract motivates the work with
+exactly our setting — "traditional shortest path algorithms, such as Dijkstra's
+and Bellman-Ford, struggle to provide effective solutions in environments
+where congestion, accidents, and road closures continuously alter network
+conditions" — but is paywalled and **UNREAD**. It is the single highest-priority
+item left: if it measures recovery after closures against Dijkstra, it is our
+closest competitor on the recovery axis and must be cited and distinguished.
+Two others seen only in snippet: a density-guided ACO for dynamic VRP that
+uses SUMO for traffic-density matrices, and an ACO routing paper for connected
+vehicles evaluated in SUMO. Neither shows a closure-recovery measurement in
+the visible text; **both unread**.
+
+**STILL OUTSTANDING, and this is now the whole remaining literature risk:**
+a systematic database pass on IEEE Xplore and Scopus (web search is not a
+substitute for either), plus a forward-citation sweep of Zhang 2014 and the
+Tokyo rail paper. Web search surfaced no forward-citation list for Zhang 2014;
+Semantic Scholar or Google Scholar's "cited by" is the right instrument and
+has not been used. Treat the novelty claim as **well-supported but not yet
+systematically verified**.
 
 ---
 
@@ -431,8 +578,13 @@ paper, since anyone doing this work would likely cite one of them.
    framing is dead. The replacement framing is stronger: on random graphs the
    flux separates cleanly and extraction is trivial; on a real directed road
    network it does not, which is what makes extraction decisive and the
-   two-series split necessary.** Still outstanding: read Figures 4/5/9 off the
-   PDF for their ACO accuracy curve.
+   two-series split necessary.** ~~Still outstanding: read Figures 4/5/9.~~
+   **ALSO DONE 2026-10-18** — read from the PMC figure images, not the PDF
+   (they are rasters). Figure 9 is the defensive result: **their ACO sits at
+   0% optimal-path accuracy from 1,000 to 2,000 nodes**, where ours reaches
+   43-44% exact and 73-81% within 10% on a larger, directed, real network.
+   That is what licenses reporting ACO's missed exit criterion as a finding
+   about ACO rather than about our tuning.
 2. ~~Read the directed variant before claiming directedness is unaddressed.~~
    **DONE 2026-10-18 — it exists (Zhang, Zhang & Deng 2014). Two edits follow
    from it: (i) we must NOT claim directedness is an unaddressed gap, and must
@@ -453,9 +605,17 @@ paper, since anyone doing this work would likely cite one of them.
    network" is false. The defensible claim is: first three-way benchmark on a
    real *road* network with directed constraints and simulator-generated
    congestion, measuring recovery from closures as well as path quality.
-5. Check whether the goal-directed ACO paper evaluates under congestion. If it
-   is free-flow only, we extend rather than contradict it.
-6. Run the database pass listed above and add its queries to the record.
+5. ~~Check whether the goal-directed ACO paper evaluates under congestion.~~
+   **DONE 2026-10-18, read in full. IT DOES NOT: static arc travel times on
+   one 528-node ArcGIS network, no simulator, no Dijkstra baseline, no
+   recovery, and its orientation term is an ANGULAR alignment factor rather
+   than our great-circle time bound. We extend it; we do not contradict it,
+   and the section heading has been corrected to say so.**
+6. **Run the database pass — THE LAST REAL GAP.** IEEE Xplore + Scopus, plus
+   a Semantic Scholar / Google Scholar forward-citation sweep of Zhang 2014
+   and the Tokyo rail paper. Read the 2026 Springer ACO chapter
+   (doi:10.1007/978-3-032-26319-3_12) — it motivates itself with closures and
+   is the likeliest competitor on the recovery axis.
 7. Only then write the related-work section.
 
 **One standing risk.** Three of the six leads above could each weaken a claim
