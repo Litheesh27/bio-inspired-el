@@ -47,7 +47,9 @@ The safe formulation, which survives every paper read so far:
 > on a real *road* network with directed constraints and simulator-generated
 > congestion, measuring recovery from closures as well as path quality.
 
-**Caveat on the strength of this check.** Four searches is a sanity check, not
+**Caveat on the strength of this check — NOW PARTLY SUPERSEDED: see
+"Systematic database pass" below, which adds two complete forward-citation
+sweeps and structured database queries.** Four searches is a sanity check, not
 a systematic review. It does not cover non-indexed venues, Indian journals and
 conference proceedings that index poorly, or theses. Before submission this
 needs a proper database pass (IEEE Xplore, Scopus, Google Scholar) with
@@ -561,13 +563,101 @@ uses SUMO for traffic-density matrices, and an ACO routing paper for connected
 vehicles evaluated in SUMO. Neither shows a closure-recovery measurement in
 the visible text; **both unread**.
 
-**STILL OUTSTANDING, and this is now the whole remaining literature risk:**
-a systematic database pass on IEEE Xplore and Scopus (web search is not a
-substitute for either), plus a forward-citation sweep of Zhang 2014 and the
-Tokyo rail paper. Web search surfaced no forward-citation list for Zhang 2014;
-Semantic Scholar or Google Scholar's "cited by" is the right instrument and
-has not been used. Treat the novelty claim as **well-supported but not yet
-systematically verified**.
+---
+
+## Systematic database pass — **RUN 2026-10-18**
+
+Done through the open citation APIs (Semantic Scholar, OpenAlex, Crossref),
+which need no subscription. **Read the scope note at the end before quoting
+this as a systematic review.**
+
+### Forward-citation sweep — COMPLETE, NOT SAMPLED
+
+**Zhang et al. 2014** (`10.1155/2014/487069`) — 28 citing papers in Semantic
+Scholar, 26 in OpenAlex. **All 28 titles screened. No competitor.** The set is
+dominated by slime-mould algorithm design, surveys, and applications far from
+road routing (knapsack, water-distribution networks, asteroid tours, ZigBee
+deployment, robot path planning). The only road/traffic-adjacent entries are
+"A Node Selecting Approach for Traffic Network Based on Artificial Slime Mold"
+(IEEE Access, 2020) and "A Physarum-inspired algorithm for logistics
+optimization" (Swarm Evol. Comput., 2021) — neither is a benchmark against ACO
+and Dijkstra, and neither models congestion or disruption.
+
+**Tokyo rail paper** (`10.1016/j.biosystems.2011.05.001`) — 69 citing papers,
+all screened for road / traffic / congestion / disruption / recovery / ACO
+terms; 10 matched and were read by title. **No competitor.** The two closest
+are *network design* rather than routing: "Fault tolerant network design
+inspired by Physarum polycephalum" (Natural Computing, 2013) and "PANDA: a
+physarum-inspired algorithm to solve the multi-objective discrete network
+design problem" (Expert Syst. Appl., 2024).
+
+**A category worth one sentence in the paper: Physarum+ACO HYBRIDS exist and
+are NOT benchmarks.** "An Ant Colony System Based on the Physarum Network"
+(ICSI 2013) and "A Logistic Distribution Routes Solving Strategy Based on the
+Physarum Network and Ant Colony Optimization" (IEEE HPCC 2015) COMBINE the two
+methods into one algorithm. That is a different contribution from comparing
+them, and we should name the distinction rather than let a reviewer think we
+missed them.
+
+### Structured OpenAlex queries
+
+| query | matches |
+|---|---|
+| Physarum + ant colony + Dijkstra + road network + congestion + recovery | **0** |
+| Physarum + slime mould + road closure + disruption + recovery + rerouting | **0** |
+| bio-inspired routing + SUMO + microscopic simulation + algorithm comparison | 59, none relevant |
+| ACO + road network + disruption + recovery + warm start + pheromone retention | 4, all noise |
+
+The 59 bio-inspired+SUMO hits are traffic-SIGNAL control, V2X route advisory,
+and GA intersection tuning. **None is a Physarum/ACO/Dijkstra routing
+benchmark**, which corroborates the earlier finding that no Physarum + SUMO
+work exists.
+
+### The 2026 Springer ACO chapter — **RESOLVED. NOT A COMPETITOR.**
+
+Nguyen Minh Tuan, Phayung Meesad, Nguyen Hong Son, Huynh Trong Thua, "An
+Improved Ant Colony Optimization for Dynamic Shortest Path Problems in Smart
+Transportation Systems", *Lecture Notes in Networks and Systems* (AUTSYS 2025
+proceedings), 2026, pp. 147-158, doi:10.1007/978-3-032-26319-3_12.
+**Abstract read in full from the publisher page; full text is paywalled.**
+
+It was flagged as the likeliest competitor on the recovery axis because its
+motivation names road closures. **That is motivation only.** A keyword audit
+of the entire chapter landing page gives: `closure` 2 hits (both in the one
+motivating sentence), **`disrupt` 0, `recovery` 0, `Physarum` 0, `SUMO` 0**.
+The evaluation is the **METR-LA** dataset — loop-detector speeds from Los
+Angeles highways — against classical ACO, Dijkstra and a GA router, measuring
+travel time and convergence under *fluctuating traffic*, never under a closure.
+
+**Cite it, for two reasons, one of them against us.** It is the most recent
+ACO-vs-Dijkstra comparison under genuinely MEASURED time-varying traffic, and
+that is precisely where our design is weaker: our congestion is
+simulator-generated from synthetic demand, theirs is real sensor data. The
+honest limitation sentence is that we buy a controlled, repeatable disruption
+protocol and a full directed street network at the cost of measured demand,
+and METR-LA is the obvious complement. It is not a competitor because it has
+no Physarum arm, no closure experiment and no recovery metric.
+
+### SCOPE NOTE — what this pass does and does not cover
+
+Covered: everything indexed by Crossref/OpenAlex/Semantic Scholar, which
+includes IEEE, Springer, Elsevier, Wiley and most Scopus-indexed venues, plus
+complete forward-citation sets for the two anchor papers.
+
+**NOT covered, and these remain genuine gaps:** the IEEE Xplore and Scopus
+native interfaces with their own controlled vocabularies; Google Scholar's
+full-text index (which reaches theses and non-indexed proceedings); Indian
+journals and conference proceedings that index poorly; and anything behind a
+paywall that we judged from the abstract alone (the 2026 chapter, and the
+directed-Physarum variant, whose full text still needs an institutional
+login).
+
+**Revised verdict: the novelty claim is now SYSTEMATICALLY SUPPORTED for the
+indexed literature, not merely unrefuted.** Two complete forward-citation
+sweeps of the two most likely anchor papers, plus structured database queries
+on the decisive combinations, return no work combining the three algorithms on
+a real road network with simulator congestion and closure recovery. The
+residual risk is concentrated in non-indexed venues.
 
 ---
 
@@ -611,11 +701,16 @@ systematically verified**.
    recovery, and its orientation term is an ANGULAR alignment factor rather
    than our great-circle time bound. We extend it; we do not contradict it,
    and the section heading has been corrected to say so.**
-6. **Run the database pass — THE LAST REAL GAP.** IEEE Xplore + Scopus, plus
-   a Semantic Scholar / Google Scholar forward-citation sweep of Zhang 2014
-   and the Tokyo rail paper. Read the 2026 Springer ACO chapter
-   (doi:10.1007/978-3-032-26319-3_12) — it motivates itself with closures and
-   is the likeliest competitor on the recovery axis.
+6. ~~Run the database pass.~~ **DONE 2026-10-18 via the open citation APIs —
+   see the section above.** Complete forward-citation sweeps of Zhang 2014
+   (28/28 screened) and the Tokyo rail paper (69, 10 relevant read), plus
+   structured OpenAlex queries returning ZERO matches on the two decisive
+   combinations. The 2026 Springer chapter is **resolved and is not a
+   competitor**: its closure language is motivation only, and its evaluation
+   is METR-LA sensor data with no disruption, no recovery metric and no
+   Physarum arm. Residual gaps are named in the scope note: Google Scholar
+   full text, poorly-indexed Indian venues, and two paywalled full texts
+   judged from abstracts.
 7. Only then write the related-work section.
 
 **One standing risk.** Three of the six leads above could each weaken a claim
