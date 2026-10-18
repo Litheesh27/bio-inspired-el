@@ -31,6 +31,11 @@ congestion.
 
 Full tables with confidence intervals: **[`docs/results/summary.md`](docs/results/summary.md)**
 
+The write-up is **[`docs/paper/`](docs/paper/)** — `main.tex` is a six-page
+IEEE conference paper; `main_journal.tex` is a longer version of the same
+work. `docs/paper/README.md` covers building them and states which
+references were read in full and which were judged from an abstract.
+
 ### Headline findings
 
 **Warm start's benefit is fewer iterations, not cheaper ones.** Retaining the
@@ -254,6 +259,8 @@ bio_el/
 ├── figures/                   # publication-quality PNG + SVG
 ├── docs/
 │   ├── PLAN.md                # the approved phase plan
+│   ├── paper/                 # the IEEE paper (main.tex = conference, 6 pp)
+│   ├── related_work.md        # literature pass + the novelty claim's limits
 │   ├── results/summary.md     # all result tables with CIs
 │   └── tuning/                # hyperparameter sweeps and calibration records
 ├── data/results/final_*.parquet   # the experimental evidence (tracked)
