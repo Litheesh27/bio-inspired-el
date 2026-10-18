@@ -515,6 +515,24 @@ that file has the detail.
       3. Use MEDIAN + IQR and PAIRED tests keyed on identical
          (od, scenario, traffic, seed) tuples — the sweep is fully paired by
          construction, so an unpaired test discards the design.
+      **PHASE 9 AUDIT FINDING — `time_to_first_valid_path_iters` IS DEGENERATE
+      AND MUST NOT BE REPORTED AS A METRIC.** It is **exactly 1.0 on all 5,012
+      disrupted rows, every algorithm, warm and cold, zero variance** (min = p50
+      = p99 = max = 1.0). Phase 6 built it to separate "finds a valid route
+      fast" from "finds a good one slowly", and on this data it separates
+      nothing. The cause is structural, not a null result worth celebrating:
+      ACO's ants construct COMPLETE paths from iteration 1, and Physarum's
+      extraction falls through to `full_graph_fallback` = Dijkstra, which always
+      returns a path — so no router here can score anything but 1.
+      Consequence: the project's "defensible metrics" list is
+      **iterations-to-adapt and post-disruption path quality**, NOT the three
+      originally planned. The honest-reporting note at the bottom of this file
+      and `docs/PLAN.md` both still name time-to-first-valid-path; treat those
+      as superseded. The column stays in the schema (it is cheap, and a future
+      router with a genuine search phase could move it) but it is excluded from
+      every reported metric. If the paper wants this measurement, the metric has
+      to be REDEFINED — e.g. iterations to first path within X% of optimal —
+      which is a new measurement, not a re-reading of this column.
 
 ## Repo layout
 

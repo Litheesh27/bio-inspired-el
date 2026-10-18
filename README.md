@@ -40,6 +40,18 @@ p<1e-51). The per-iteration cost is identical warm vs cold (0.051 s vs
 0.054 s), which is what proves the saving is adaptation rather than
 arithmetic. The distribution is bimodal: **48.3% of warm recoveries converge
 in exactly one iteration**, which cold start never does — its minimum is 73.
+Warm start helps ACO too, though less dramatically: 1.26× fewer iterations and
+1.56× less wall-clock (n=1,790).
+
+**But warm start is not free, and the cost falls on Physarum's own
+extraction.** A retained conductivity field is tuned to the *old* optimum, so
+after a closure it keeps driving flux down now-severed corridors: the warm
+max-flux walk completes a path on only **36.3%** of recoveries against cold's
+59.5%, and on the 126 cells where both complete, cold's walk is the marginally
+better one (1.013 vs 1.059, p=2.7e-04). Warm start's robust win is speed, not
+path quality. An earlier version of this result compared the two unpaired,
+across samples of different size, and reported the opposite — the mechanism
+above is plausible but untested, and only the measurement is a finding.
 
 **Physarum's apparent competence is substantially its fallback's.** The model
 extracts a path by walking the maximum-flux tube; when that walk dead-ends it
@@ -61,11 +73,26 @@ and 5 simultaneous path closures — far faster than linearly. A whole closed
 corridor (7.4%) is *safer* than five scattered edges, because one detour
 routes around all of it.
 
+**ACO misses its own exit criterion, and that is reported too.** The target was
+stretch ≤1.10 on ≥90% of pairs. Held-out measurement gives 73.3% under
+free-flow (95% CI [58.7, 86.7] — the whole interval below the bar) and 80.7%
+under BPR heavy. The failure mode is a colony settling on a badly wrong
+corridor and never leaving it: MMAS's own convergence criterion fires on most
+of those solves, so they are settled local optima rather than unfinished
+searches. A deliberately failing test keeps this visible.
+
 **Dijkstra wins on wall-clock, and that is reported.** It recomputes an exact
 path in one iteration and ~31 ms. The bio-inspired methods take seconds. The
-defensible metrics are iterations-to-adapt, time-to-first-valid-path, and
-post-disruption path quality — the speed-vs-quality trade this project exists
-to quantify.
+defensible metrics are iterations-to-adapt and post-disruption path quality —
+the speed-vs-quality trade this project exists to quantify.
+
+*One metric did not survive contact with the data.* `time_to_first_valid_path`
+was built to separate "finds a valid route fast" from "finds a good one
+slowly", but it is **exactly 1.0 on all 5,012 disrupted rows, for every
+algorithm, with zero variance**. It is structurally pinned rather than
+informative: ACO's ants construct complete paths from the first iteration, and
+Physarum's extraction falls back to Dijkstra, which always returns a path. The
+column is kept in the schema and excluded from the reported metrics.
 
 ### Figures
 
