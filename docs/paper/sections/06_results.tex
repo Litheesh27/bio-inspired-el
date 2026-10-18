@@ -14,8 +14,7 @@ walk-only stretch columns are $\geq 1.0$ with zero violations.
 We begin here because every later Physarum figure depends on it.
 
 Pooled across extraction methods, Physarum matches the optimal route on
-\textbf{90.0\%} of undisrupted pairs at heavy demand and 86.7\% at light ---
-reproducing the accuracy the literature reports for this model. Restricted to
+\textbf{90.0\%} of undisrupted pairs at heavy demand and 86.7\% at light, reproducing the accuracy the literature reports for this model. Restricted to
 its own maximum-flux walk, the same solves give \textbf{23.3\% and 16.7\%}.
 The walk produces any path at all on 69.8\% of Physarum rows.
 
@@ -59,8 +58,8 @@ Warm & 119 & \textbf{0} & \textbf{239 \ (66.8\%)} \\
 \end{center}
 
 With roughly 98.8\% of retained tubes below $\theta$, warm start's threshold
-subgraph never connects the pair --- a hard zero across all 358 warm cells
---- so \textbf{warm Physarum reports plain Dijkstra's path on two-thirds of
+subgraph never connects the pair, a hard zero across all 358 warm cells, so
+\textbf{warm Physarum reports plain Dijkstra's path on two-thirds of
 all recoveries}. The two start modes reach an answer by different routes, and
 only one of them involves the model.
 
@@ -112,8 +111,8 @@ Physarum, model only & heavy & 30 & 1.1007 & 23.3\% & 33.3\% \\
 ACO's exact-match share is 43--44\% with median stretch 1.005 (light) and
 1.021 (heavy). Its per-seed within-10\% spread is tight (0.767--0.833 light,
 0.567--0.633 heavy), so this is not a seed artefact. We note separately that
-ACO \emph{misses} the exit criterion we set for it in advance --- stretch
-$\leq 1.10$ on $\geq 90\%$ of pairs --- reaching 73.3\% under free flow
+ACO \emph{misses} the exit criterion we set for it in advance (stretch $\leq 1.10$ on $\geq
+90\%$ of pairs), reaching 73.3\% under free flow
 (95\% CI [58.7, 86.7], the whole interval below the bar) and 80.7\% under
 BPR heavy on a held-out pair draw. The failure mode is a colony settling on a
 badly wrong corridor and never leaving it: MMAS's own convergence criterion
@@ -173,14 +172,14 @@ analysis that computed one produced a spurious 24$\times$.
 
 Second, \textbf{per-iteration cost is essentially identical} warm versus cold
 (0.0511 versus 0.0538\,s), which is what establishes that the saving is
-fewer iterations rather than cheaper ones --- the precise claim the
+fewer iterations rather than cheaper ones, the precise claim the
 self-healing framing makes.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{fig07_warm_vs_cold.pdf}
-\caption{Warm versus cold recovery. The bimodality --- a mode at exactly one
-iteration and another near 50 --- is the shape of the result, and is why we
+\caption{Warm versus cold recovery. The bimodality, a mode at exactly one iteration and another near 50, is the
+shape of the result, and is why we
 report paired ratios rather than a ratio of medians.}
 \label{fig:warmcold}
 \end{figure}
@@ -200,7 +199,7 @@ completes a path on only 36.3\% of recoveries against cold's 59.5\%.
 \includegraphics[width=\columnwidth]{fig03_stretch_pre_post.pdf}
 \caption{Path quality before and after a closure. Counts beneath each pair are
 $n$(pre)\,/\,$n$(post). The two Physarum series are never pooled: the
-model-only series is null --- not zero --- on runs where the walk never
+model-only series is null, not zero, on runs where the walk never
 completed a path, so its $n$ is smaller by construction.}
 \label{fig:prepost}
 \end{figure}
@@ -208,15 +207,15 @@ completed a path, so its $n$ is smaller by construction.}
 An earlier version of this analysis compared the walk's quality unpaired,
 across samples of different size, and reported the opposite sign. On the 126
 cells where both complete, cold's walk appeared marginally better (1.0127
-versus 1.0587, $p=2.7\times10^{-4}$) --- but Section~\ref{sec:adaptation}
+versus 1.0587, $p=2.7\times10^{-4}$), but Section~\ref{sec:adaptation}
 shows that this advantage is bought at iteration one by a field that has not
 yet run the model, and that at the final iteration the two modes are
 statistically indistinguishable.
 
 \subsubsection{Why warm start hurts the walk}
 
-We tested the obvious explanation --- that a retained field keeps driving
-flux down now-severed corridors --- and \textbf{refuted it}. A placebo
+We tested the obvious explanation, that a retained field keeps driving flux
+down now-severed corridors, and \textbf{refuted it}. A placebo
 closure placed at least eight hops from every node of the retained corridor
 reproduces almost the entire deficit (warm 43.3\% versus cold 70.0\%,
 $n=60$, $p=3.1\times10^{-5}$), and placebo versus a closure sitting directly
@@ -225,8 +224,8 @@ paired, $p=1.00$). Spatial locality is flat: the warm walk's terminal node
 lies a median 12 hops from the nearest closed edge, and so does cold's
 ($p=0.356$).
 
-A second candidate --- that warm start simply leaves less conductivity ---
-is \emph{analytically impossible}. Scaling $D$ by $c$ scales $w = D/L$ by $c$
+A second candidate, that warm start simply leaves less conductivity, is
+\emph{analytically impossible}. Scaling $D$ by $c$ scales $w = D/L$ by $c$
 and hence $p$ by $1/c$, leaving $Q = w\,\Delta p$ exactly unchanged. We
 verified this numerically: rescaling by $10^{-3}$ and $10^{3}$ changes the
 flux by less than $10^{-15}$. Only the \emph{shape} of the field can matter,
@@ -238,8 +237,7 @@ corridor.} Whether the walk completes on the final pre-disruption iteration,
 with the graph fully intact, predicts warm recovery completion on 314 of 358
 cells (87.7\%, Fisher $p=1.4\times10^{-50}$). Convergence alone, with no
 closure anywhere, drops completion from 69.8\% to 43.0\%. Cold start's
-advantage is not that it explores more freely relative to the closure --- it
-is that it \emph{rewinds the field to the uniform state the walk can
+advantage is not that it explores more freely relative to the closure; it is that it \emph{rewinds the field to the uniform state the walk can
 traverse}.
 
 \begin{figure}[t]
@@ -250,8 +248,7 @@ question this paper asks. One marker per series and start mode at the median,
 with IQR arms on both axes, over a scatter of individual S1--S6 recovery
 runs. Dijkstra and A* anchor the lower left: exact paths in one iteration and
 roughly 30\,ms. The model-only Physarum series uses the same runs as the
-pooled one, so its $x$ is identical and only its $y$ differs --- \emph{the
-vertical gap between the two Physarum markers is the fallback's
+pooled one, so its $x$ is identical and only its $y$ differs: \emph{the vertical gap between the two Physarum markers is the fallback's
 contribution}.}
 \label{fig:pareto}
 \end{figure}
@@ -297,8 +294,7 @@ uninformative: flux spreads across many routes, so almost every node has a
 positive-flux successor, and the route strung together is poor. This also
 resolves the apparent conflict with~\cite{wang2021transition}: their claim
 that the dominant path at convergence is the shortest path is about quality,
-and on our substrate quality indeed improves with convergence --- what fails
-is \emph{completion}, which a complete graph cannot exhibit.
+and on our substrate quality indeed improves with convergence; what fails is \emph{completion}, which a complete graph cannot exhibit.
 
 \textbf{No earlier stopping rule is worth adopting.} No fixed iteration count
 beats the $\max|\Delta D| < \epsilon$ criterion in any of our three
@@ -308,8 +304,8 @@ iteration; it adds only 16 completions of mediocre paths (median stretch
 1.2479, none optimal), moving the within-10\% rate from 0.267 to 0.350.
 Moreover the walk's best iteration is dispersed (median 26.5, IQR
 12.25--33.5), so no fixed rule could capture it, and the router already
-retains the best walk across all iterations --- so there is nothing to gain
-by stopping at all.
+retains the best walk across all iterations, so there is nothing to gain by
+stopping at all.
 
 \subsection{The congestion model determines the sign of the effect}
 
@@ -328,9 +324,8 @@ congestion model, not of the algorithm}, which is direct evidence for the
 bracketing warning of Section~\ref{sec:network}. We draw a methodological
 conclusion from it: any claim about routing behaviour ``under congestion''
 that does not name its congestion model is underdetermined. We accordingly
-retract a framing from our own earlier analysis --- that the two
-bio-inspired methods fail in opposite directions under congestion --- which
-held on BPR and does not survive SUMO, where both degrade.
+retract a framing from our own earlier analysis, that the two bio-inspired
+methods fail in opposite directions under congestion, which held on BPR and does not survive SUMO, where both degrade.
 
 \subsection{Network fragility is super-additive}
 \label{sec:fragility}
@@ -341,8 +336,8 @@ generations with zero infeasible outcomes.
 
 The network is \textbf{not} fragile to single closures: only about one path
 edge in 40 is a cut edge for its own OD pair, as expected of a dense
-irregular grid. But fragility is \textbf{super-additive} in simultaneous
-closures --- 2.6\%, 14.5\%, 31.7\% for one, three and five path edges, far
+irregular grid. But fragility is \textbf{super-additive} in simultaneous closures: 2.6\%, 14.5\% and 31.7\%
+for one, three and five path edges, far
 faster than linear growth. And a whole closed \emph{corridor} is
 \emph{safer} than five scattered edges (7.4\% at a median of four and up to
 60 edges, against 31.7\% at five), because corridor edges are consecutive, so

@@ -2,8 +2,8 @@
 
 Ant colony optimization (ACO)~\cite{dorigo1996ant,stutzle2000maxmin} and
 Physarum polycephalum conductivity
-models~\cite{nakagaki2000maze,tero2007mathematical} maintain internal state
---- a pheromone field, a field of tube conductivities --- that is claimed to
+models~\cite{nakagaki2000maze,tero2007mathematical} maintain internal state (a pheromone field, a field of tube conductivities)
+that is claimed to
 let them adapt to a changed network rather than recompute from scratch. On a
 road network, where closures and congestion change edge costs continuously,
 that is an attractive property.
@@ -14,8 +14,8 @@ on an undisrupted shortest-path problem, and treat the adaptive machinery as
 self-evidently useful. Three gaps follow: the test graphs lack the structure
 that makes real road routing hard (one-way streets, low out-degree,
 cul-de-sacs); congestion is usually absent, so the weights the adaptation
-tracks never move; and recovery after disruption --- the behaviour the
-retained state exists to provide --- is seldom the measured quantity.
+tracks never move; and recovery after disruption, the behaviour the retained state exists to
+provide, is seldom the measured quantity.
 
 We close those gaps for one city. We benchmark Dijkstra and
 A*~\cite{dijkstra1959note,hart1968formal}, a MAX--MIN Ant System, and a

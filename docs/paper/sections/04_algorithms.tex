@@ -2,7 +2,7 @@
 \label{sec:algorithms}
 
 All three families implement one \texttt{Router} interface exposing a solve,
-a disruption hook, and --- for the iterative methods --- a single step, plus
+a disruption hook, and, for the iterative methods, a single step, plus
 explicit serializable state so that warm start is a deliberate operation
 rather than an accident of object reuse.
 
@@ -82,14 +82,14 @@ The model yields a field, not a route. We extract in three stages and
 \emph{record which one produced the reported path}:
 
 \begin{enumerate}
-\item \textbf{Maximum-flux walk} --- from the source, repeatedly step along
+\item \textbf{Maximum-flux walk}: from the source, repeatedly step along
   the highest-flux admissible outgoing edge, with a visited set, until the
   target is reached or no admissible successor exists. This is the model's
   own extraction, and is procedurally identical to the dominant-path
   construction of~\cite{wang2021transition}.
-\item \textbf{Threshold-subgraph fallback} --- if the walk dead-ends, run a
+\item \textbf{Threshold-subgraph fallback}: if the walk dead-ends, run a
   shortest-path search on the subgraph of edges with $D_e > \theta$.
-\item \textbf{Full-graph fallback} --- if that subgraph does not connect the
+\item \textbf{Full-graph fallback}: if that subgraph does not connect the
   pair, run a shortest-path search on the whole graph. \emph{This is plain
   Dijkstra}, and a result attributed to it says nothing about Physarum.
 \end{enumerate}
@@ -113,8 +113,7 @@ worse: with NaN pressures every flux comparison and every $D > \theta$ test
 is false, so extraction silently falls through to the full-graph fallback and
 \textbf{Physarum reports Dijkstra's own path as its own, with no error
 raised}. On the intersection-closure scenario this produced a mean
-post-disruption stretch of exactly 1.000 --- fabricated perfection on
-precisely the scenario where the model is weakest.
+post-disruption stretch of exactly 1.000, fabricated perfection on precisely the scenario where the model is weakest.
 
 We fix this by restricting the Laplacian to the source's connected component
 in the undirected projection of the surviving graph, with membership derived

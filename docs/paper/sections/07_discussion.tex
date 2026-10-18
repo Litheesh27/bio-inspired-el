@@ -38,9 +38,8 @@ that fallback produced.
 The warm-start case shows how far this can go. At 66.8\% full-graph fallback,
 a warm Physarum recovery is more likely to be Dijkstra's answer than the
 model's, and an evaluation reporting only pooled stretch would record that
-configuration as near-perfect. It was precisely such a configuration --- the
-stranded-component degeneracy of Section~\ref{sec:algorithms} --- that
-produced a fabricated mean stretch of exactly 1.000 on the scenario where
+configuration as near-perfect. It was precisely such a configuration, the stranded-component degeneracy of
+Section~\ref{sec:algorithms}, that produced a fabricated mean stretch of exactly 1.000 on the scenario where
 the model is weakest, with no error raised. Instrumenting provenance is what
 made that visible.
 
@@ -67,7 +66,7 @@ Against all of this stands the baseline. Dijkstra recomputes an exact route
 in about 31\,ms on this network, and none of the bio-inspired methods comes
 close on wall-clock. For a graph of a few thousand nodes, recomputation is
 simply the right engineering answer, and the interest in these methods has to
-rest on regimes we did not test --- far larger networks, many simultaneous
+rest on regimes we did not test: far larger networks, many simultaneous
 commodities, or settings where the cost function is not globally observable.
 We think it is more useful to say so than to construct a comparison the
 baseline would lose.

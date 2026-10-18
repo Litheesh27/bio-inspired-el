@@ -39,8 +39,8 @@ Physarum-versus-Dijkstra comparison is partly circular.
 On recovery the effect is sharper and \emph{mode-dependent}. Cold start
 splits walk/threshold/full-graph as 95/201/62 (17.3\% Dijkstra); warm start
 as 119/\textbf{0}/\textbf{239}. With roughly 98.8\% of retained tubes below
-$\theta$, warm's threshold subgraph never connects the pair --- a hard zero
-across all 358 cells --- so \textbf{warm Physarum reports plain Dijkstra's
+$\theta$, warm's threshold subgraph never connects the pair, a hard zero across all
+358 cells, so \textbf{warm Physarum reports plain Dijkstra's
 path on two-thirds of recoveries}.
 
 Fig.~\ref{fig:cconv} is the clearest evidence: in two of three panels the
@@ -77,8 +77,7 @@ $p=9.0\times10^{-52}$); ACO gains 1.26$\times$ and 1.56$\times$
 Two points matter more than the ratios. The distribution is \textbf{bimodal,
 not merely shifted}: 48.3\% of warm recoveries converge in exactly one
 iteration while cold start never does and its minimum is 73
-(Fig.~\ref{fig:cwc}). The ratio of the two medians is therefore not a valid
-statistic --- an earlier version of this analysis computed one and produced
+(Fig.~\ref{fig:cwc}). The ratio of the two medians is therefore not a valid statistic; an earlier version of this analysis computed one and produced
 a spurious 24$\times$. And \textbf{per-iteration cost is essentially
 identical} warm versus cold (0.0511 vs 0.0538\,s), establishing that the
 saving is fewer iterations rather than cheaper ones.
@@ -97,8 +96,8 @@ start is better: cold wins 57, warm 11, 290 ties
 completes on only 36.3\% of recoveries against cold's 59.5\%. Reporting the
 speed-up alone describes half the effect.
 
-\textbf{Why.} We tested the obvious mechanism --- a retained field driving
-flux down severed corridors --- and \emph{refuted} it: a placebo closure at
+\textbf{Why.} We tested the obvious mechanism, a retained field driving flux down severed
+corridors, and \emph{refuted} it: a placebo closure at
 least eight hops away reproduces nearly the whole deficit and is
 indistinguishable from a closure directly on the route (43.3\% vs 41.7\%,
 $n=60$ paired, $p=1.00$). A second candidate, that warm start leaves less
@@ -122,10 +121,9 @@ left. The model-only and pooled Physarum series share the same runs, so
 
 \subsection{What adaptation contributes}
 
-This invites the conclusion that the model should stop earlier. Against a
-zero-adaptation control --- the same pressure solve on a uniform field,
-containing none of the Tero dynamics, and exact by construction since the
-solver extracts before updating $D$ --- the converged field completes
+This invites the conclusion that the model should stop earlier. Against a zero-adaptation control (the same pressure solve on a uniform
+field, containing none of the Tero dynamics, and exact by construction since
+the solver extracts before updating $D$), the converged field completes
 \emph{less} often (0.433 vs 0.567) yet is far better when it does (median
 stretch \textbf{1.0059} vs 1.4367; exact given completion 46.2\% vs 5.9\%).
 Paired, the unadapted field loses 26--0 to the best adapted iteration

@@ -7,8 +7,8 @@ Park, Shivajinagar, Richmond Town), chosen for its irregular organically
 grown topology. The network comes from OpenStreetMap via
 OSMnx~\cite{boeing2017osmnx}, reduced to its largest strongly connected
 component: \textbf{2{,}856 nodes, 7{,}015 directed edges, mean out-degree
-2.46}. That last figure is the decisive structural property --- a node with
-out-degree two offers a walk-based extraction almost no choice, and one-way
+2.46}. That last figure is the decisive structural property: a node with out-degree
+two offers a walk-based extraction almost no choice, and one-way
 streets mean a direction favoured by an undirected flow computation may be
 illegal.
 
@@ -24,8 +24,8 @@ OSMnx merges, per-edge times must be aggregated in \emph{pace},
 $t_e = \ell_e \sum_i t_i / \sum_i \ell_i$; averaging the matched segments'
 travel times instead made 26\% of edges imply speeds above the network
 maximum and silently broke A*'s admissibility. And free-flow speeds are
-re-annotated from the generated SUMO network so numerator and denominator
-share one road model --- which raises mean free-flow speed to 51.5\,km/h, so
+re-annotated from the generated SUMO network so numerator and denominator share one road model, which raises mean free-flow
+speed to 51.5\,km/h, so
 \textbf{absolute times here are optimistic and only ratios are reported}.
 
 \subsection{Algorithms}
@@ -39,8 +39,8 @@ than assumed so.
 $\eta = 1/t_{uv}$ and bounded pheromone. Plain MMAS does not work here: with
 mean out-degree 2.46 the ant completion rate was \emph{zero}, so we
 construct tours with backtracking plus a dead-node memo, raising completion
-from 36\% to 80\%. The memo is lossy by measurement --- about 66\% of prunes
-refuse a still-viable node --- and we document it as a deliberate heuristic.
+from 36\% to 80\%. The memo is lossy by measurement (about 66\% of prunes refuse a still-viable
+node), and we document it as a deliberate heuristic.
 A goal-directed variant using A*'s heuristic is reported as an ablation, not
 the default: giving ACO target-location information Physarum never receives
 would make the comparison unfair, and it is also not better.
@@ -58,11 +58,10 @@ is the origin of most of what follows.
 \textbf{Extraction, and its provenance.} The model yields a field, not a
 route. We extract in three stages and record which produced the reported
 path: (i) the \emph{maximum-flux walk}, stepping to the highest-flux
-admissible successor with a visited set --- the model's own extraction, and
+admissible successor with a visited set, the model's own extraction,
 procedurally identical to~\cite{wang2021transition}; (ii) a shortest-path
 search on the $D_e > \theta$ subgraph if the walk dead-ends; (iii) a
-shortest-path search on the whole graph otherwise --- \emph{this is plain
-Dijkstra}. Recording provenance per run is what makes
+shortest-path search on the whole graph otherwise, which \emph{is plain Dijkstra}. Recording provenance per run is what makes
 Section~\ref{sec:cprov} possible; without it a Physarum stretch of 1.000 is
 unfalsifiable.
 

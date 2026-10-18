@@ -9,8 +9,8 @@ shortest path for \emph{undirected} graphs~\cite{bonifaci2012physarum}. The
 directedness restriction is explicit in the literature: Zhang et al.\ note
 the model is designed only for undirected networks and propose a directed
 formulation~\cite{zhang2014directed}, which we do not implement. Our results
-therefore characterise the canonical model on a directed network --- an
-acknowledged limitation --- rather than reporting a defect.
+therefore characterise the canonical model on a directed network, an acknowledged
+limitation, rather than reporting a defect.
 
 \textbf{The prior three-way comparison.} Combining Physarum, ACO and
 Dijkstra is not new. Zhang et al.\ benchmark exactly these
@@ -18,9 +18,9 @@ three~\cite{zhang2014improved}, reporting that their Physarum variant and
 Dijkstra both attain optimal paths ``with one hundred percent'' while ACO
 degrades with network size, on Erd\H{o}s--R\'enyi graphs of 15--2{,}000
 nodes with static weights, no congestion and no disruption. Two points
-matter. Their method needs \emph{no} extraction machinery --- the path is
-read straight off the flux field, which separates cleanly on such graphs ---
-so we cannot claim that Physarum evaluations generally conflate provenance;
+matter. Their method needs \emph{no} extraction machinery, since the path is read
+straight off the flux field, which separates cleanly on such graphs, so we
+cannot claim that Physarum evaluations generally conflate provenance;
 the honest contrast is that extraction is a formality there and decisive
 here. And their ACO reaches zero optimal-path accuracy beyond 1{,}000 nodes,
 whereas ours attains 43--44\% exact match on a larger and harder network,

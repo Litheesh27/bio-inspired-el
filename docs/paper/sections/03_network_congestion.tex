@@ -55,8 +55,7 @@ merges them, so the ratio of matched-segment length to graph-edge length has
 median 1.44 and 90th percentile 8.9 on this network. Averaging the matched
 segments' \emph{travel times} therefore answers ``how long to cross one
 matched segment'', not ``how long to cross this graph edge'', and understates
-each edge in proportion to how finely it was split --- which affects busy
-arterials most. Under that rule 1{,}794 of 7{,}015 edges (26\%) implied
+each edge in proportion to how finely it was split, which affects busy arterials most. Under that rule 1{,}794 of 7{,}015 edges (26\%) implied
 speeds above the fastest limit anywhere in the network, the worst by a factor
 of 266, which silently violates A*'s admissibility. Aggregating in
 \emph{pace} instead,
@@ -75,8 +74,7 @@ that the congested numerator and the free-flow denominator derive from one
 road model, and stamp the choice of baseline into every snapshot's metadata.
 A consequence must be stated plainly: mean free-flow speed rises from
 22.74 to 51.49\,km/h, so \textbf{absolute travel times on this graph are
-optimistic for Bengaluru}. Ratios --- which is all we report --- are
-comparable; absolute seconds are not realistic.
+optimistic for Bengaluru}. Ratios, which is all we report, are comparable; absolute seconds are not realistic.
 
 \subsection{Calibration and what the two sources do and do not agree on}
 

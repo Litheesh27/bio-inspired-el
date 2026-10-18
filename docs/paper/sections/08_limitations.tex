@@ -4,9 +4,8 @@
 \subsection{Scope of the measurement}
 
 \textbf{One city, one bounding box.} All results are from a single
-$\sim$4$\times$4\,km area. The structural properties we argue are decisive
---- low out-degree, pervasive one-ways --- are common to dense organically
-grown cities, but we have not demonstrated that the findings transfer, and a
+$\sim$4$\times$4\,km area. The structural properties we argue are decisive, low out-degree and
+pervasive one-ways, are common to dense organically grown cities, but we have not demonstrated that the findings transfer, and a
 grid-planned city could behave differently precisely because its out-degree
 is higher and more uniform.
 
@@ -35,9 +34,8 @@ literature~\cite{tero2010rules}.
 \textbf{We did not implement the directed Physarum formulation.} A directed
 variant exists~\cite{zhang2014directed}. We deliberately benchmarked the
 canonical model, since that is what the accuracy claims in the literature
-describe, but our extraction findings should be read as characterising the
-canonical model on a directed network --- an acknowledged limitation of that
-model --- rather than as a statement about what Physarum-style methods can
+describe, but our extraction findings should be read as characterising the canonical model on a directed network, an acknowledged
+limitation of that model, rather than as a statement about what Physarum-style methods can
 achieve in principle.
 
 \textbf{The dead-node memo is lossy.} About 66\% of its prunes refuse a node
@@ -65,9 +63,8 @@ findings concern a structural failure mode rather than a parameter setting.
 The design is fully paired, and the pairing is verified rather than assumed:
 pre-disruption walk stretch is byte-identical warm versus cold across 250
 cells, as it must be, since before the closure the two modes are the same
-run. Where we report conditional statistics --- notably the model-only
-median, which exists only where the walk completed --- the denominator
-differs from the unconditional shares, and reading one as the other would
+run. Where we report conditional statistics (notably the model-only median, which
+exists only where the walk completed), the denominator differs from the unconditional shares, and reading one as the other would
 mislead. Two errors of exactly this kind occurred during the work and were
 corrected; we have stated both in Section~\ref{sec:design} because they are
 easy to repeat.

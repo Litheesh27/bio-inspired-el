@@ -50,9 +50,8 @@ the prior art.
 \subsection{Extraction and termination}
 
 Closest to our extraction finding is the transition-point analysis of Wang et
-al.~\cite{wang2021transition}, which defines a ``dominant path'' procedure
---- repeatedly step to the maximum-flux edge, delete the visited node, and
-continue --- that is procedurally identical to the maximum-flux walk we
+al.~\cite{wang2021transition}, which defines a ``dominant path'' procedure (repeatedly step to the maximum-flux
+edge, delete the visited node, and continue) that is procedurally identical to the maximum-flux walk we
 implement. They state that when the solver converges, the dominant path is
 exactly the shortest path of the graph. On our network it is not: at the
 conductivity convergence point the walk yields a directed-legal path on
@@ -65,9 +64,9 @@ mean degree 6 to 600, with the graph assumed undirected throughout. On a
 complete graph the maximum-flux walk cannot dead-end, because every
 unvisited node remains adjacent; the failure mode we measure is structurally
 unreachable there. Our network has mean out-degree 2.46 and pervasive
-one-way streets. We also adopt their methodological point --- that apparent
-speed-ups of accelerated Physarum variants can stem from an inappropriate
-termination criterion --- and test their termination rule on a substrate they
+one-way streets. We also adopt their methodological point that apparent speed-ups of
+accelerated Physarum variants can stem from an inappropriate termination
+criterion, and test their termination rule on a substrate they
 did not evaluate.
 
 \subsection{Ant colony optimization on traffic networks}
@@ -80,8 +79,8 @@ destination~\cite{zhang2018novel}. That is related to, but not the same as,
 the goal-directed ablation we evaluate, which folds an A*-style great-circle
 time bound into the visibility term. Their evaluation uses a single 528-node
 network with static arc travel times and compares only against conventional
-ACO, so our result --- that goal direction is neutral under free flow and
-harmful under BPR-heavy congestion --- extends rather than contradicts it.
+ACO, so our result, that goal direction is neutral under free flow and harmful
+under BPR-heavy congestion, extends rather than contradicts it.
 
 More recently, Tuan et al.\ report an improved ACO for dynamic shortest-path
 problems that outperforms conventional ACO, Dijkstra and a genetic
@@ -103,6 +102,6 @@ congestion with closure recovery as a measured outcome; in particular, no
 work pairing a Physarum model with SUMO was found at all. Related but
 distinct are Physarum/ACO \emph{hybrids}, which fuse the two mechanisms into
 one algorithm rather than comparing them. The contribution claimed here is
-therefore the substrate and the measurement --- a real, directed road
-network, simulator congestion, and recovery --- and not the combination of
+therefore the substrate and the measurement (a real, directed road network, simulator
+congestion, and recovery), and not the combination of
 the three algorithms, which \cite{zhang2014improved} already reported.

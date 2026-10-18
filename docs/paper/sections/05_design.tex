@@ -62,19 +62,18 @@ Each run emits a flat record with its algorithm, OD pair, scenario, traffic
 level, start mode, seed, config hash and timestamp. The reported quantities
 are:
 
-\begin{itemize}
-\item \texttt{stretch} $= c_{\text{alg}} / c_{\text{Dijkstra}}$ on the same
-  weighted graph; values below 1.0 are a bug and are asserted against.
-\item \texttt{post\_disruption\_stretch}, against Dijkstra recomputed on the
-  \emph{disrupted} graph.
-\item \texttt{recovery\_iterations} and \texttt{recovery\_wallclock}.
-\item \texttt{walk\_best\_stretch} and
-  \texttt{post\_disruption\_walk\_stretch}, the maximum-flux walk's own
-  result, against the same per-cell denominator as the pooled figures so the
-  two are directly comparable within a row.
-\item \texttt{best\_path\_extraction\_method}, recorded at the iteration
-  where the best cost improved.
-\item \texttt{failed}, recorded and reported, never silently dropped.
+\begin{itemize}\setlength{\itemsep}{1pt}
+\item \emph{Stretch}, $c_{\text{alg}} / c_{\text{Dijkstra}}$ on the same
+  weighted graph. Values below 1.0 are a bug and are asserted against.
+\item \emph{Post-disruption stretch}, against Dijkstra recomputed on the
+  disrupted graph.
+\item \emph{Recovery iterations} and \emph{recovery wall-clock}.
+\item \emph{Walk-only stretch}, pre- and post-disruption: the maximum-flux
+  walk's own result, taken against the same per-cell denominator as the
+  pooled figures so the two are comparable within a row.
+\item \emph{Extraction provenance}, the stage that produced the reported
+  path, recorded at the iteration where the best cost improved.
+\item \emph{Failure}, recorded and reported, never silently dropped.
 \end{itemize}
 
 One planned metric is excluded. \texttt{time\_to\_first\_valid\_path} was
@@ -84,8 +83,8 @@ every algorithm, with zero variance}. The cause is structural: ACO's ants
 construct complete paths from the first iteration, and Physarum's extraction
 falls back to Dijkstra, which always returns a path. It discriminates
 nothing here and we exclude it rather than report a degenerate column. A
-meaningful version would have to be redefined --- for example, iterations to
-a first path within $x\%$ of optimal --- which is a different measurement.
+meaningful version would have to be redefined, for example as iterations to a first path within
+$x\%$ of optimal, which is a different measurement.
 
 \subsection{Statistics}
 
