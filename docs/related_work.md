@@ -39,9 +39,95 @@ as *confirmed*.
 
 ## The closest prior art, and what to say about it
 
-### 1. Zhang et al. 2014 — improved Physarum (IPPA), shortest path
+### 1. Zhang et al. 2014 — improved Physarum (IPPA), shortest path — **READ**
 
-<https://onlinelibrary.wiley.com/doi/10.1155/2014/487069>
+<https://onlinelibrary.wiley.com/doi/10.1155/2014/487069> (Wiley blocks
+fetching; open-access full text at
+<https://pmc.ncbi.nlm.nih.gov/articles/PMC3984829/>, PMC3984829)
+
+Zhang, Wang, **Adamatzky**, Chan, Mahadevan, Deng. Sci. World J., 2014-03-25.
+
+> **READ 2026-10-18 via PMC full text. The three questions below are answered
+> from the body text, not the abstract. Figures 4, 5 and 9 carry the numeric
+> comparisons and are images, so no accuracy figures were readable — those
+> still need the PDF.**
+
+**ANSWER 1 — THEY HAVE NO FALLBACK, AND NO SEPARATE EXTRACTION STEP AT ALL.**
+The path is read straight off the converged flux field by inspecting which
+edges carry flux: "the flux of edges (1,2), (2,3), and (3,4) converge to 1
+while that of the other edges converge to 0. Therefore, the shortest path
+found by the proposed method is 1 → 2 → 3 → 4", and §4.2 "we can follow the
+direction of the flow to construct these paths." No conductivity threshold, no
+greedy-walk rule, no shortest-path search on a subgraph, and **no fallback**.
+Termination is `sum |dD| <= 0.01`.
+
+**THIS KILLS ONE FRAMING AND HANDS US A BETTER ONE.** We cannot claim that
+Physarum papers in general report accuracy pooled across extraction
+provenance — this one has nothing to pool. The reason it needs no extraction
+machinery is that **on its test graphs the flux separates cleanly**: it goes
+to 1 on the path and 0 elsewhere, so reading the path off is trivial.
+
+The honest framing is therefore the opposite of a critique of their
+bookkeeping, and stronger for us:
+
+> On randomly generated graphs the Physarum flux field separates cleanly
+> enough that path extraction is trivial and reported accuracy is effectively
+> the solver's accuracy. On a real, directed, organically-grown road network it
+> does not: our model's own max-flux walk yields a directed-legal path on only
+> 69.8% of runs and matches the optimum on 23.3%, so extraction stops being a
+> formality and becomes the step that decides the reported result. Any
+> aggregate Physarum accuracy on such a network is therefore a statement about
+> the extraction policy as much as about the model, which is why we report the
+> two series separately.
+
+Our fallback is not a flaw we are confessing — it exists because on this
+substrate something is needed, and the contribution is measuring exactly how
+much of the headline number it accounts for.
+
+**ANSWER 2 — comparison numbers.** 15 networks, 15–2,000 nodes, 40 runs each,
+random graphs from igraph's `erdos.renyi.game`, integer edge lengths 1–100.
+Both IPPA and Dijkstra find optimal paths "with one hundred percent"; ACO's
+accuracy "decreases gradually with the increase of the network" and is "very
+low", with no numeric rate in the text. Dijkstra is faster than IPPA; IPPA is
+faster than ACO. Iteration counts are compared only against the basic Physarum
+algorithm, not against ACO or Dijkstra. **Note their ACO result points the
+same way ours does** — ACO degrading as the graph grows is consistent with our
+path-length stratification, where ACO's within-10% rate falls to 48% on the
+longest tercile.
+
+**ANSWER 3 — directedness is never stated, and one-ways are never mentioned.**
+The paper does not say whether its test networks are directed, and contains no
+mention of one-way edges, directed arcs or directional feasibility.
+`erdos.renyi.game` defaults to undirected. The flux equations are signed and
+the text says "follow the direction of the flow", which is a directed
+*formulation* over an undirected *topology* — exactly our situation, since we
+solve the pressure field on an undirected projection too.
+
+**This is the cleanest possible support for why the benchmark had to be run on
+a real road network.** Our Phase 8c mechanism — the flux says "flow this way",
+the road says "not in that direction", on a graph with mean out-degree 2.46 and
+pervasive one-ways — is a failure mode that cannot occur on an Erdős–Rényi
+graph with no directional constraints. The prior three-way comparison could not
+have found it.
+
+Minor, worth a footnote only: the paper says "we make the network fully
+connected" while Table 1 lists sparse edge counts (23 edges on 15 nodes, where
+complete would be 105), and does not reconcile the two.
+
+**STILL TO DO on this paper:** get the PDF and read the numbers off Figures 4,
+5 and 9 — the ACO accuracy curve in Figure 9 is the one number that would let
+us compare their ACO degradation directly against our tercile result.
+
+### 1b. The same group's DIRECTED variant — **MUST READ NEXT**
+
+"An improved bio-inspired algorithm for the directed shortest path problem" —
+<https://research.polyu.edu.hk/en/publications/an-improved-bio-inspired-algorithm-for-the-directed-shortest-path/>
+
+Same research group, and it addresses **precisely** the gap identified above.
+If they solved directed Physarum routing, our "directed legality breaks the
+extraction" finding must be positioned against their solution rather than
+presented as an open problem. **Read this before writing a single sentence
+about directedness being unaddressed in the literature.**
 
 **The single most important paper for us to engage with.** Reportedly compares
 Physarum against *both* Dijkstra and ACO, on synthetic graphs of 15–2,000
@@ -215,21 +301,27 @@ paper, since anyone doing this work would likely cite one of them.
 
 ## What to do with this before writing
 
-1. **Read Zhang 2014 properly first.** Its extraction step determines whether
-   our headline provenance finding is a general critique or a local defect.
-   Nothing else in the reading list changes the paper's framing as much.
-2. **Read the transition-point paper second.** If theory already predicts when
+1. ~~Read Zhang 2014 first.~~ **DONE 2026-10-18 — see above. It has no
+   fallback and no extraction step, so the "everyone pools across provenance"
+   framing is dead. The replacement framing is stronger: on random graphs the
+   flux separates cleanly and extraction is trivial; on a real directed road
+   network it does not, which is what makes extraction decisive and the
+   two-series split necessary.** Still outstanding: read Figures 4/5/9 off the
+   PDF for their ACO accuracy curve.
+2. **Read the same group's DIRECTED variant (1b) before claiming directedness
+   is unaddressed.** This is now the biggest open risk to our framing.
+3. **Read the transition-point paper.** If theory already predicts when
    the Physarum solver fails to separate the shortest path, our 23.3% is a
    confirmation on a new substrate rather than a discovery, and the paper must
    be framed accordingly.
-3. **Fix the novelty sentence.** The Tokyo rail paper means "first on a real
+4. **Fix the novelty sentence.** The Tokyo rail paper means "first on a real
    network" is false. The defensible claim is: first three-way benchmark on a
    real *road* network with directed constraints and simulator-generated
    congestion, measuring recovery from closures as well as path quality.
-4. Check whether the goal-directed ACO paper evaluates under congestion. If it
+5. Check whether the goal-directed ACO paper evaluates under congestion. If it
    is free-flow only, we extend rather than contradict it.
-5. Run the database pass listed above and add its queries to the record.
-6. Only then write the related-work section.
+6. Run the database pass listed above and add its queries to the record.
+7. Only then write the related-work section.
 
 **One standing risk.** Three of the six leads above could each weaken a claim
 we currently make. That is the expected shape of an honest literature check,
