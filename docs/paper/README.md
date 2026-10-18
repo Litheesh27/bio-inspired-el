@@ -73,7 +73,9 @@ defended, and this project has deliberately kept its claims checkable.
 ## Before submitting
 
 - [ ] Compile both; fix whatever the first pass reports.
-- [ ] Add author affiliation, email, and any funding note in the `\author` block.
+- [x] ~~Add author affiliation and email.~~ All five authors are in both
+      versions, ordered as in the team's previous submission. Add a funding
+      note to the `\author` block if one is required.
 - [ ] Check the venue's page limit and cut per the list in `main_conf.tex`.
 - [ ] Re-read `docs/related_work.md` §"Systematic database pass" — the novelty
       claim is stated there as *systematically supported for the indexed
