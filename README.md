@@ -228,24 +228,27 @@ assertion is a standing marker for a genuinely missed exit criterion (see
 
 ### Viewing the dashboard locally
 
-Run the export first, then serve `web/`:
+Everything the page needs is committed, so a fresh clone works straight away:
 
 ```
-.venv\Scripts\python.exe scripts\05_export_web.py
 cd web
 ..\.venv\Scripts\python.exe -m http.server 8000
 ```
 
-then open <http://localhost:8000>.
+then open <http://localhost:8000>. No export step, no SUMO, no re-running the
+sweep.
 
-Two reasons the export step is not optional. `web/index.html` fetches
-`web/data/bundle.json`, which browsers block over `file://`, so the page has
-to be served rather than opened. And the page loads `figures/*.png`
-*relative to itself*: `scripts/05_export_web.py` stages copies into
-`web/figures/`, which is gitignored because the originals are tracked in
-`figures/`. Serving `web/` without running the export gives a page whose
-figures all 404 — the published artifact does not show this, because its
-copies are uploaded into the artifact's own file tree.
+It has to be *served* rather than opened: `web/index.html` fetches
+`web/data/bundle.json`, and browsers block that over `file://`.
+
+`web/figures/` is tracked even though it duplicates `figures/`. The page loads
+`figures/*.png` *relative to itself*, so without those copies a clone renders
+a dashboard whose every image 404s — and regenerating them is not a fallback,
+since `scripts/05_export_web.py` also rebuilds the bundle and that needs the
+SUMO snapshots under `data/sumo/`, which are not tracked. Git is
+content-addressed, so the duplicated PNGs share one blob with `figures/` and
+cost essentially nothing. `05_export_web.py` re-stages them automatically, so
+adding or regenerating a figure keeps the two in step.
 
 ---
 

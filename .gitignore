@@ -54,6 +54,8 @@ docs/paper/*.fdb_latexmk
 # the repo should not depend on Overleaf to show what was submitted.
 !docs/paper/bioroute_conference_paper.pdf
 
-# Staged by scripts/05_export_web.py so a local server can serve the page.
-# Copies of figures/, which is tracked, so these are derived.
-web/figures/
+# web/figures/ IS tracked. It duplicates figures/, but git is content-addressed
+# so identical files share one blob and the duplication costs ~nothing. Without
+# it, anyone cloning this repo gets a dashboard whose images all 404: the bundle
+# is committed, so regenerating it via 05_export_web.py is both unnecessary and
+# impossible for them (data/sumo/ is not tracked).
