@@ -4,14 +4,19 @@ Two versions, sharing one bibliography and one set of figures:
 
 | File | Class | Target | Sections |
 |---|---|---|---|
-| `main.tex` | `IEEEtran[journal]` | 10–14 pp | `sections/01…09` |
-| `main_conf.tex` | `IEEEtran[conference]` | 6–8 pp | `conf/01…05` |
+| **`main.tex`** | `IEEEtran[conference]` | **6–8 pp** | `conf/01…05` |
+| `main_journal.tex` | `IEEEtran[journal]` | 10–14 pp | `sections/01…09` |
+
+**`main.tex` is the conference paper**, because Overleaf picks `main.tex` as
+the main document automatically and that is the version being worked on. To
+build the long version instead, set `main_journal.tex` as the main document in
+Overleaf's menu (Menu → Main document).
 
 The conference version is a **genuine cut, not the journal paper with
 sections deleted** — its text is written tighter. It keeps one lead
 contribution (extraction provenance) plus the recovery trade, and drops the
 fragility result, the congestion-model result, most of the mechanism
-refutations, and most of the methods detail. `main_conf.tex` carries a
+refutations, and most of the methods detail. `main.tex` carries a
 comment listing what to cut next if it still runs long.
 
 ## Building
@@ -29,8 +34,8 @@ Run the staging script, then upload the resulting zip as a new project:
 
 It copies the two `.tex` roots, `refs.bib`, `sections/`, `conf/`, and the
 seven IEEE figure PDFs into `docs/paper/figures/`, so `\graphicspath` resolves
-without reaching outside the project. On Overleaf set the main document to
-`main.tex` or `main_conf.tex` and the compiler to pdfLaTeX.
+without reaching outside the project. On Overleaf the compiler should be pdfLaTeX. `main.tex` (the conference
+paper) is selected automatically.
 
 ### Locally
 
@@ -38,7 +43,8 @@ Needs TeX Live or MiKTeX with `IEEEtran`:
 
 ```
 cd docs/paper
-latexmk -pdf main.tex        # or main_conf.tex
+latexmk -pdf main.tex           # conference
+latexmk -pdf main_journal.tex   # journal
 ```
 
 `\graphicspath` already includes `../../figures/ieee/`, so a local build finds
@@ -76,7 +82,7 @@ defended, and this project has deliberately kept its claims checkable.
 - [x] ~~Add author affiliation and email.~~ All five authors are in both
       versions, ordered as in the team's previous submission. Add a funding
       note to the `\author` block if one is required.
-- [ ] Check the venue's page limit and cut per the list in `main_conf.tex`.
+- [ ] Check the venue's page limit and cut per the list in `main.tex`.
 - [ ] Re-read `docs/related_work.md` §"Systematic database pass" — the novelty
       claim is stated there as *systematically supported for the indexed
       literature*, with the residual gaps named. Keep the paper's phrasing

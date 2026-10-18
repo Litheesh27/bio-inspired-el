@@ -29,7 +29,7 @@ FIGURES = [
     "fig07_warm_vs_cold.pdf",
 ]
 
-ROOTS = ["main.tex", "main_conf.tex", "refs.bib", "README.md"]
+ROOTS = ["main.tex", "main_journal.tex", "refs.bib", "README.md"]
 TREES = ["sections", "conf"]
 
 
@@ -78,8 +78,10 @@ def main():
     size_kb = os.path.getsize(OUT_ZIP) / 1024.0
     print(f"wrote {OUT_ZIP}")
     print(f"  {n} files, {size_kb:.1f} KB")
-    print("Upload to Overleaf as a new project; set the main document to")
-    print("main.tex (journal) or main_conf.tex (conference), compiler pdfLaTeX.")
+    print("Upload to Overleaf as a new project. main.tex IS the conference")
+    print("paper and Overleaf selects it by default; compiler pdfLaTeX.")
+    print("The long journal version is main_journal.tex -- to build that one,")
+    print("set it as the main document in Overleaf's menu.")
 
 
 if __name__ == "__main__":
