@@ -1,4 +1,5 @@
 \section{Method}
+\label{sec:method}
 
 \subsection{Network and congestion}
 
@@ -21,19 +22,19 @@ secondary source.
 
 Two details affect correctness. Because \texttt{netconvert} splits ways that
 OSMnx merges, per-edge times must be aggregated in \emph{pace},
-$t_e = \ell_e \sum_i t_i / \sum_i \ell_i$; averaging the matched segments'
-travel times instead made 26\% of edges imply speeds above the network
-maximum and silently broke A*'s admissibility. And free-flow speeds are
-re-annotated from the generated SUMO network so numerator and denominator share one road model, which raises mean free-flow
-speed to 51.5\,km/h, so
-\textbf{absolute times here are optimistic and only ratios are reported}.
+$t_e = \ell_e \sum_i t_i / \sum_i \ell_i$; averaging the segments' travel
+times instead made 26\% of edges imply speeds above the network maximum and
+silently broke A*'s admissibility. Free-flow speeds are re-annotated from the
+generated network so numerator and denominator share one road model, which
+raises mean free-flow speed to 51.5\,km/h: \textbf{absolute times here are
+optimistic and only ratios are reported}.
 
 \subsection{Algorithms}
 
 Dijkstra~\cite{dijkstra1959note} on the congested weight supplies the
 reference cost for every stretch figure; A*~\cite{hart1968formal} uses a
-great-circle/max-speed heuristic and is verified equal to Dijkstra rather
-than assumed so.
+great-circle/max-speed heuristic, verified equal to Dijkstra rather than
+assumed so.
 
 \textbf{MMAS}~\cite{stutzle2000maxmin} uses $\tau^{\alpha}\eta^{\beta}$ with
 $\eta = 1/t_{uv}$ and bounded pheromone. Plain MMAS does not work here: with
@@ -41,9 +42,9 @@ mean out-degree 2.46 the ant completion rate was \emph{zero}, so we
 construct tours with backtracking plus a dead-node memo, raising completion
 from 36\% to 80\%. The memo is lossy by measurement (about 66\% of prunes refuse a still-viable
 node), and we document it as a deliberate heuristic.
-A goal-directed variant using A*'s heuristic is reported as an ablation, not
-the default: giving ACO target-location information Physarum never receives
-would make the comparison unfair, and it is also not better.
+A goal-directed variant using A*'s heuristic is an ablation, not the default:
+it would give ACO target-location information Physarum never receives, and it
+is also not better.
 
 \textbf{Physarum} carries conductivity $D_e$ and cost $L_e$ per edge, giving
 conductance $w_e = D_e/L_e$. Each iteration solves a weighted-Laplacian
@@ -68,20 +69,18 @@ unfalsifiable.
 Under warm start we zero severed edges' conductivity, drop them from the
 Laplacian and retain the rest; cold start resets $D$ to uniform. Closures
 remove edges but not nodes, so a stranded node yields a singular Laplacian
-and non-finite pressures, under which every flux and threshold comparison
-silently fails and extraction falls through to the Dijkstra fallback. We
-restrict the Laplacian to the source's connected component in the surviving
-graph; we rejected an epsilon floor on $D$, which would invent transport
-capacity across a closed road.
+and non-finite pressures, under which extraction silently falls through to
+the Dijkstra fallback. We restrict the Laplacian to the source's connected
+component in the surviving graph, and rejected an epsilon floor on $D$, which
+would invent transport capacity across a closed road.
 
 \subsection{Design and statistics}
 
 Seven scenarios: no disruption (S0); one random path edge (S1); the
 highest-betweenness path edge (S2); three (S3) and five (S4) simultaneous
-path edges; a corridor, i.e. one named OSM way (S5); and an intersection
-with all incident edges (S6). Closures are chosen relative to the current
-optimal path, must leave the pair connected, and rejected candidates are
-counted.
+path edges; a corridor (S5); and an intersection with all incident edges
+(S6). Closures are chosen relative to the current optimal path, must leave
+the pair connected, and rejected candidates are counted.
 
 The matrix is 30 OD pairs (stratified by distance, disjoint from all tuning
 draws) $\times$ 7 scenarios $\times$ 2 demand levels $\times$ \{warm,

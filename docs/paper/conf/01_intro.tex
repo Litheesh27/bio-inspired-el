@@ -27,23 +27,22 @@ pairs, closures and traffic, and all quality figures use a Dijkstra optimum
 computed on the same weighted graph.
 
 \textbf{Contribution 1: extraction provenance, not the model, decides what a
-Physarum result means.} The conductivity model emits a field, not a route; a
-separate extraction step produces the path. Instrumenting that step shows
-Physarum's apparent competence is largely its fallback's. Pooled, it matches
-the optimum on 90.0\% of undisrupted pairs, reproducing the literature;
-restricted to its own maximum-flux walk, 23.3\%. The median stretch is
-exactly 1.000 in \emph{every} provenance class, so a pooled number cannot
-distinguish the model from its Dijkstra fallback. On warm recoveries the
-fallback supplies 66.8\% of reported paths.
+Physarum result means.} The model emits a field, not a route; a separate
+extraction step produces the path. Instrumenting it shows Physarum's apparent
+competence is largely its fallback's: pooled, it matches the optimum on
+90.0\% of undisrupted pairs, reproducing the literature; restricted to its
+own maximum-flux walk, 23.3\%. The median stretch is exactly 1.000 in
+\emph{every} provenance class, so a pooled number cannot distinguish the
+model from its Dijkstra fallback, which supplies 66.8\% of reported paths on
+warm recoveries.
 
 \textbf{Contribution 2: warm start buys speed and charges quality.} It cuts
 recovery 2.97$\times$ in iterations and 6.87$\times$ in wall-clock, paired
-($n=358$); 48.3\% of warm recoveries converge in exactly one iteration,
-which cold start never does. Per-iteration cost is unchanged, so the saving
-is adaptation rather than cheaper arithmetic. Against this, warm start is
-significantly worse on the reported post-disruption path
-($p=4.3\times10^{-7}$) and completes its own extraction far less often.
+($n=358$), and 48.3\% of warm recoveries converge in exactly one iteration,
+which cold start never does, at unchanged per-iteration cost: the saving is
+adaptation, not cheaper arithmetic. Against this, warm start is significantly
+worse on the reported post-disruption path ($p=4.3\times10^{-7}$) and
+completes its own extraction far less often.
 
-We report what the methods lose as well as what they gain: Dijkstra
-recomputes an exact route in one iteration and about 31\,ms, and no method
-here approaches it on wall-clock.
+We report what the methods lose as well as gain: Dijkstra recomputes an exact
+route in one iteration and about 31\,ms, which no method here approaches.

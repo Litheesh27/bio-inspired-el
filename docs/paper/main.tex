@@ -67,6 +67,13 @@
 }
 \makeatother
 
+% Width of the three full-width figures. They are generated at 7.16in, which
+% is exactly \textwidth, so \textwidth draws them at 100%.
+% KNOB: if the bibliography spills onto a 7th page, set this to
+% 0.96\textwidth. That reclaims about 8 lines and is visually
+% indistinguishable; it is still nearly double the single-column size.
+\newcommand{\figw}{\textwidth}
+
 \graphicspath{{figures/}{../../figures/ieee/}}
 
 \begin{document}
