@@ -29,7 +29,10 @@ FIGURES = [
     "fig07_warm_vs_cold.pdf",
 ]
 
-ROOTS = ["main.tex", "main_journal.tex", "refs.bib", "README.md"]
+# Only the conference paper ships in the bundle. main_journal.tex stays in
+# the repo but is deliberately NOT uploaded: having two candidate main
+# documents is what caused the wrong one to be compiled before.
+ROOTS = ["main.tex", "refs.bib", "README.md"]
 TREES = ["sections", "conf"]
 
 
@@ -80,8 +83,8 @@ def main():
     print(f"  {n} files, {size_kb:.1f} KB")
     print("Upload to Overleaf as a new project. main.tex IS the conference")
     print("paper and Overleaf selects it by default; compiler pdfLaTeX.")
-    print("The long journal version is main_journal.tex -- to build that one,")
-    print("set it as the main document in Overleaf's menu.")
+    print("Only the conference paper is bundled, so there is exactly one")
+    print("candidate main document.")
 
 
 if __name__ == "__main__":

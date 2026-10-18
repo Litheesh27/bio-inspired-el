@@ -14,12 +14,18 @@
 %%   3. Fig. 2 (the provenance argument survives on Fig. 1 alone)
 %% ==========================================================================
 \documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
 
-\usepackage[T1]{fontenc}
-\usepackage[utf8]{inputenc}
+% Preamble kept as close as possible to the stock IEEE conference template,
+% because the author block below is the one from our previous submission and
+% depends on that template's defaults. In particular do NOT add fontenc or
+% inputenc here: the stock template omits both, and the five-author block
+% with \linebreakand is sensitive to the author halign's natural widths.
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
-\usepackage{amsmath}
-\usepackage{amssymb}
+\usepackage{textcomp}
+\usepackage{xcolor}
 \usepackage{booktabs}
 \usepackage{url}
 
