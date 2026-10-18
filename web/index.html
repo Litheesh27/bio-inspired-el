@@ -104,6 +104,17 @@ select{font-family:var(--mono);font-size:12.5px;padding:8px 9px;width:100%;
 .mapbox{background:var(--surface);border:1px solid var(--line);
   border-radius:var(--r);padding:12px;min-width:0}
 canvas{width:100%;height:auto;display:block;border-radius:6px}
+.figs{display:grid;gap:20px}
+figure{margin:0;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r);padding:13px;min-width:0}
+/* The figures are matplotlib rasters with dark ink on a light canvas, so the
+   plate keeps a light ground in BOTH themes. This literal is the image's own
+   paper, not a theme colour -- inheriting a dark surface here would leave the
+   axes and labels unreadable. */
+figure img{width:100%;height:auto;display:block;border-radius:5px;
+  background:#FFFFFF}
+figcaption{font-size:13px;color:var(--muted);margin-top:10px;max-width:86ch}
+figcaption b{color:var(--ink);font-weight:600}
 .maplegend{display:flex;flex-wrap:wrap;gap:12px;margin-top:11px;font-size:12.5px}
 .key{display:flex;align-items:center;gap:6px;color:var(--muted);min-width:0}
 .key i{width:16px;height:3px;border-radius:2px;flex:none;display:block}
@@ -118,6 +129,7 @@ thead th{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;
   text-transform:uppercase;color:var(--muted);font-weight:500}
 tbody tr:last-child td{border-bottom:0}
 td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+td.wrap{white-space:normal;min-width:260px;max-width:420px}
 .swatch{display:inline-block;width:9px;height:9px;border-radius:2px;
   margin-right:7px}
 .sub{color:var(--muted);font-size:11.5px}
@@ -197,6 +209,77 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
 </section>
 
 <section>
+  <div class="sechead"><h2>Figures</h2></div>
+  <p class="note">Figures 2, 3, 4 and 7 are computed from the results file.
+  Figures 1, 5 and 6 are regenerated under the same config, graph, snapshots and
+  seeds, because the results file stores path lengths but not paths and carries
+  no per-iteration traces; that regeneration reproduced 64 of 64 cross-checked
+  values exactly. Every caption in the figures says which kind it is.</p>
+  <div class="figs">
+    <figure>
+      <img src="figures/fig04_pareto_recovery_vs_quality.png" loading="lazy"
+        alt="Recovery speed against post-disruption path quality, two panels.">
+      <figcaption><b>4 &middot; The speed-vs-quality trade.</b> The direct answer
+      to the research question. Dijkstra and A* anchor the bottom-left at one
+      iteration and stretch 1.000. The vertical gap between the green and purple
+      Physarum markers is the fallback's contribution: same runs, same x, only
+      the extraction differs.</figcaption>
+    </figure>
+    <figure>
+      <img src="figures/fig01_convergence.png" loading="lazy"
+        alt="Cost against iteration for three origin-destination pairs.">
+      <figcaption><b>1 &middot; Convergence, three distance strata.</b> The single
+      best piece of evidence for the provenance finding: in two of three panels
+      Physarum's with-fallback curve sits at stretch 1.0 <em>from iteration
+      one</em> — it was Dijkstra's answer before the model did any work. ACO's
+      five seeds are drawn individually because the spread between them is a real
+      result, not noise to average away.</figcaption>
+    </figure>
+    <figure>
+      <img src="figures/fig07_warm_vs_cold.png" loading="lazy"
+        alt="ECDFs of recovery iterations and paired warm-cold deltas.">
+      <figcaption><b>7 &middot; Warm start is bimodal, not merely faster.</b> The
+      warm curve jumps to 48.3% at exactly one iteration, then flattens. Cold
+      start's minimum is 73. This shape is why a ratio of the two medians is not
+      a valid statistic and the paired per-cell ratio is.</figcaption>
+    </figure>
+    <figure>
+      <img src="figures/fig03_stretch_pre_post.png" loading="lazy"
+        alt="Stretch distributions before and after disruption, per algorithm.">
+      <figcaption><b>3 &middot; Path quality, before and after.</b> Physarum's two
+      series side by side: flat at 1.000 with the fallback, boxed from 1.09 to
+      1.42 on its own extraction.</figcaption>
+    </figure>
+    <figure>
+      <img src="figures/fig02_recovery_by_scenario.png" loading="lazy"
+        alt="Recovery iteration distributions by scenario, warm and cold panels.">
+      <figcaption><b>2 &middot; Recovery cost by closure severity.</b> Warm
+      Physarum's median sits at one iteration for every scenario except S4 —
+      five simultaneous closures is where the retained field stops being enough.
+      The empty band in the cold panel is real: nothing recovers in fewer than 73
+      iterations from a cold start.</figcaption>
+    </figure>
+    <figure>
+      <img src="figures/fig05_routes_before_after.png" loading="lazy"
+        alt="Street map of the three routes before and after a closure.">
+      <figcaption><b>5 &middot; Re-routing after five closures.</b> The one cell
+      where all three genuinely disagree and Physarum's path is its own max-flux
+      walk. Note the hop counts: the bio-inspired routes are <em>shorter in
+      hops</em> but slower, having been drawn toward geometrically direct
+      corridors that are exactly the congested ones.</figcaption>
+    </figure>
+    <figure>
+      <img src="figures/fig06_congestion_heatmap.png" loading="lazy"
+        alt="Street network coloured by congestion ratio, light and heavy panels.">
+      <figcaption><b>6 &middot; Congestion, light vs heavy.</b> Shared colour
+      scale, clipped at the pooled 95th percentile with the clipped share printed
+      per panel. 24% of graph edges sit at free-flow under light demand and 12%
+      under heavy — those are precisely the edges no vehicle traversed.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section>
   <div class="sechead"><h2>Path quality before any closure</h2>
     <span class="chip evidence">measured</span></div>
   <p class="note">Stretch is an algorithm's path cost divided by Dijkstra's on the same
@@ -222,6 +305,14 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
   <p class="note">Warm start keeps the pheromone or conductivity field from before the
   closure; cold start rebuilds it. Dijkstra and A* have only one mode.</p>
   <div class="scroll"><table id="rectable"></table></div>
+  <p class="note" style="margin-top:18px">Those are raw medians. The comparison
+  that counts is <strong>paired</strong> on identical (OD pair, scenario, traffic
+  level, seed) tuples, since the sweep is paired by construction. A ratio above
+  1 means warm start won; lower is better on every metric here. The last column
+  is a coverage warning, and it matters on the model-only row: the warm walk
+  completes a path on far fewer cells than the cold walk, so comparing their
+  unpaired medians reverses the sign of the effect.</p>
+  <div class="scroll"><table id="pairtable"></table></div>
   <div class="callout">
     <p><strong>Warm start's gain is fewer iterations, not cheaper ones.</strong>
     Physarum's median cost per iteration is essentially identical warm and cold, so the
@@ -242,6 +333,31 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
   corridor is safer than five scattered edges because a single detour routes around
   all of it.</p>
   <div class="scroll"><table id="scntable"></table></div>
+</section>
+
+<section>
+  <div class="sechead"><h2>Does congestion help or hurt?</h2>
+    <span class="chip evidence">measured</span></div>
+  <p class="note">Paired on the same OD pair and seed, light against heavy.
+  <strong>The answer depends on the congestion model, not on the algorithm.</strong>
+  Under analytic BPR, congestion flattens the cost surface and <em>helps</em>
+  ACO. Under SUMO, measured here, it hurts: 81.3% of solves land within 10% of
+  optimal under light demand against 58.0% under heavy. Any claim about
+  behaviour "under congestion" has to name which model produced it.</p>
+  <div class="scroll"><table id="congtable"></table></div>
+</section>
+
+<section>
+  <div class="sechead"><h2>Every recorded failure</h2>
+    <span class="chip evidence">measured</span></div>
+  <p class="note">Failures are recorded, never dropped. All of them share one
+  cause and one scenario: two cells where five simultaneous path closures could
+  not be drawn without disconnecting origin from destination. That is the
+  fragility result rather than a defect — the rejection rate for candidate
+  closures rises from 2.6% for one path edge to 14.5% for three and 31.7% for
+  five, far faster than linearly, while a whole closed corridor sits at 7.4%
+  because one detour routes around all of it.</p>
+  <div class="scroll"><table id="failtable"></table></div>
 </section>
 
 <section>
@@ -292,7 +408,7 @@ function table(node, cols, rows) {
   const tb = el("tbody");
   rows.forEach(r => {
     const tr = el("tr");
-    cols.forEach(c => tr.appendChild(el("td", c.n ? "n" : null, c.f(r))));
+    cols.forEach(c => tr.appendChild(el("td", c.cls || (c.n ? "n" : null), c.f(r))));
     tb.appendChild(tr);
   });
   node.appendChild(tb);
@@ -627,6 +743,46 @@ function build() {
     { h: "s / iteration", n: 1, f: r => F(r.median_s_per_iteration) },
     { h: "Done in 1 iter", n: 1, f: r => PCT(r.share_1_iteration) }
   ], S.recovery);
+
+  const P = x => x == null ? "—"
+    : (x < 1e-4 ? Number(x).toExponential(1) : Number(x).toFixed(4));
+  const COVER = r => (r.n_warm_only || r.n_cold_only)
+    ? '<span style="color:' + cssvar("--warn") + '">' + INT(r.n_warm_only)
+      + " / " + INT(r.n_cold_only) + "</span>"
+    : '<span class="sub">0 / 0</span>';
+  table(document.getElementById("pairtable"), [
+    { h: "Series", f: r => dot(r.series) + r.label },
+    { h: "Metric", f: r => "<code>" + r.metric + "</code>" },
+    { h: "Pairs", n: 1, f: r => INT(r.n_pairs) },
+    { h: "Warm", n: 1, f: r => F(r.median_warm, r.is_quality_metric ? 4 : 2) },
+    { h: "Cold", n: 1, f: r => F(r.median_cold, r.is_quality_metric ? 4 : 2) },
+    { h: "Paired ratio", n: 1, f: r => F(r.median_paired_ratio_cold_over_warm, 2) + "×" },
+    { h: "Warm better", n: 1, f: r => INT(r.n_warm_better) },
+    { h: "Cold better", n: 1, f: r => INT(r.n_cold_better) },
+    { h: "Tied", n: 1, f: r => INT(r.n_tied) },
+    { h: "p", n: 1, f: r => P(r.pvalue) },
+    { h: "Warm-only / cold-only", n: 1, f: COVER }
+  ], S.warm_vs_cold);
+
+  table(document.getElementById("congtable"), [
+    { h: "Series", f: r => dot(r.series) + r.label },
+    { h: "Pairs", n: 1, f: r => INT(r.n_pairs) },
+    { h: "Median light", n: 1, f: r => F(r.median_light, 4) },
+    { h: "Median heavy", n: 1, f: r => F(r.median_heavy, 4) },
+    { h: "Within 10% light", n: 1, f: r => PCT(r.within_10pct_light) },
+    { h: "Within 10% heavy", n: 1, f: r => PCT(r.within_10pct_heavy) },
+    { h: "Light only", n: 1, f: r => INT(r.n_pass_light_only) },
+    { h: "Heavy only", n: 1, f: r => INT(r.n_pass_heavy_only) },
+    { h: "p", n: 1, f: r => P(r.pvalue) }
+  ], S.congestion_effect);
+
+  table(document.getElementById("failtable"), [
+    { h: "Algorithm", f: r => dot(r.algorithm) + (ALGO_NAME[r.algorithm] || r.algorithm) },
+    { h: "Scenario", f: r => r.scenario_id + ' <span class="sub">'
+        + (SCN_LABEL[r.scenario_id] || "") + "</span>" },
+    { h: "Runs", n: 1, f: r => INT(r.n) },
+    { h: "Reason", cls: "wrap", f: r => '<span class="sub">' + r.failure_reason + "</span>" }
+  ], S.failures);
 
   table(document.getElementById("scntable"), [
     { h: "Scenario", f: r => r.scenario_id + ' <span class="sub">'
