@@ -318,11 +318,12 @@ that file has the detail.
       **HONEST STATEMENT: warm start makes the walk LESS LIKELY TO COMPLETE AT
       ALL, and on cells where both complete, cold's walk is marginally BETTER.
       Warm start's robust win is SPEED (Result 1), not extraction quality.**
-      Mechanism (plausible, not yet tested): the retained conductivity field is
-      tuned to the OLD optimum, so after a closure it keeps driving flux down
-      now-severed corridors and the walk dead-ends; a cold field starts uniform
-      and explores freely. A test of that mechanism is an open option, not a
-      finding.
+      **MECHANISM — TESTED, AND MY FIRST GUESS WAS WRONG. See Phase 9b-mech.**
+      I originally wrote: "the retained conductivity field is tuned to the OLD
+      optimum, so after a closure it keeps driving flux down now-severed
+      corridors and the walk dead-ends; a cold field starts uniform and explores
+      freely." The second clause is right. **The first clause is refuted: the
+      closure's LOCATION is almost irrelevant.** Do not repeat it.
       **STANDING RULE THIS COST US: in this project, never compare two medians
       whose n differ without first checking whether the samples are the same
       cells. The sweep is fully paired BY CONSTRUCTION, so an unpaired
@@ -533,6 +534,71 @@ that file has the detail.
       every reported metric. If the paper wants this measurement, the metric has
       to be REDEFINED — e.g. iterations to first path within X% of optimal —
       which is a new measurement, not a re-reading of this column.
+- [x] Phase 9b-mech — **WHY warm start hurts Physarum's walk. My mechanism was
+      REFUTED; the real one is more interesting and more damaging.**
+      `scripts/measure_physarum_warm_mechanism.py`,
+      `docs/tuning/physarum_warm_start_mechanism.md` (pre-registered predictions
+      written before any datum), `data/results/physarum_warm_mechanism.jsonl`
+      (838 records, tracked). CENSUS, not a sample: all 30 OD pairs x 6 scenarios
+      x 2 SUMO levels x {warm,cold} = 358 paired cells + 60 placebo.
+      Parquet cross-check 2148/2148. `physarum.py` untouched (`git diff --stat`
+      empty); the walk was re-implemented OUTSIDE the router and asserted against
+      `last_extraction_method()` on ~40k iterations with zero disagreements.
+      **REFUTATION 1 — the closure's location is nearly irrelevant.** A PLACEBO
+      closure >=8 hops from every node of the retained corridor reproduces almost
+      the whole deficit: warm 43.3% vs cold 70.0% (n=60, discordant 0/16,
+      p=3.1e-05), against warm 36.3% vs cold 59.5% for real closures. **Placebo
+      vs S1 — same closure size, one far away, one directly on the corridor — is
+      INDISTINGUISHABLE: 43.3% vs 41.7%, n=60 paired, discordant 3/2, p=1.00.**
+      Spatial locality is flat: warm terminal node to nearest closed edge is a
+      median 12 hops, cold also 12 (paired p=0.356); I had predicted <=3 and
+      warm << cold. Conductivity near the closure REVERSES: where the warm walk
+      fails the severed share of retained D is exactly 0.000, where it succeeds
+      0.067 (p=1.8e-12). Residual closure effect pooled over scenarios is ~5-8pp
+      of a 23-27pp gap (<= a quarter) and nothing at all against S1.
+      **REFUTATION 2 — the "less conductivity overall" rival is ANALYTICALLY
+      IMPOSSIBLE, not merely unsupported. THE WALK IS SCALE-INVARIANT IN D.**
+      Scaling D by c scales w = D/L by c and therefore p by 1/c, leaving
+      Q = w*dp exactly unchanged. I verified this independently: rescaling by
+      1e-3 and 1e3 changes the flux by <1e-15 (machine precision), and the agent
+      measured bit-identical first post-disruption walks on 6/6 OD pairs. So a
+      uniform shortage of conductivity CANNOT cause a dead-end. The empirical
+      sign is wrong too: `D_total` is HIGHER where the warm walk fails (24.99 vs
+      11.50, p=2.7e-18). **Any future argument that invokes the LEVEL of D to
+      explain walk behaviour is wrong by construction — only the SHAPE can
+      matter.**
+      **THE MECHANISM THE DATA SUPPORTS: the max-flux walk works on a NEAR-
+      UNIFORM field and STOPS WORKING AS THE FIELD CONVERGES onto a thin
+      corridor.** Cold start's advantage is not that it explores freely relative
+      to the closure — it is that it REWINDS the field to the uniform state the
+      walk can actually walk. Evidence: whether the walk completes on the FINAL
+      PRE-DISRUPTION iteration, graph fully intact, predicts warm recovery walk
+      completion on 314/358 = 87.7% (Fisher p=1.4e-50). Convergence alone, with
+      no closure anywhere, drops the walk from 69.8% (some iteration) to 43.0%
+      (final iteration). Of the 204 cells whose converged field was unwalkable,
+      cold rescues 79 and warm rescues 10. Cold's walk gets significantly WORSE
+      as its own field converges (23 up / 69 down, p=1.2e-06).
+      **CONSEQUENCE FOR PHASE 9 — THE NO-POOLING RULE EXTENDS TO `max_flux_walk`
+      ITSELF.** 82.6% of cold's walk successes and **94.6% of warm's** first
+      occur on ITERATION 1 (I recomputed both from the raw records; the 94.6%
+      is mine, the agent reported only cold's). So a `max_flux_walk` attribution
+      is overwhelmingly a FIRST-ITERATION result, not the product of Physarum
+      adaptation — on a cold recovery that first iteration is a near-uniform
+      field that has done no adaptation at all. Phase 8e RESULT 4's "cold's walk
+      is marginally better" therefore has a deflating explanation: it is largely
+      a win by a field that has not yet run the model.
+      **OPEN, NOT A FINDING:** extraction quality and the convergence criterion
+      are in direct tension — `max|dD| < eps` runs the field to exactly the state
+      the walk handles worst. `walk_best_iteration()` already records where the
+      walk peaked, so testing an earlier stopping rule is cheap. UNTESTED.
+      **UNDERDETERMINED, stated as such:** the data cannot separate "concentration
+      of D" from "OD path length". `reference_hops` is the strongest cross-cell
+      predictor (28 vs 51, p=8.9e-21) and every field descriptor correlates with
+      it mechanically; `D_gini` is HIGHER where the walk succeeds, which is
+      against the concentration story too. Separating them needs a different
+      experiment: fix the OD pair and vary `dt`/`mu` to make more and less
+      concentrated fields on the SAME pair.
+      RESULT 1 (warm start's 2.97x/6.87x paired speed advantage) is UNTOUCHED.
 
 ## Repo layout
 

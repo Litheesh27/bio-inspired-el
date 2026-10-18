@@ -29,3 +29,7 @@ cache/
 # would add ~11 MB of binaries that nothing downstream reads.
 figures/ieee/*.png
 figures/ieee/*.svg
+
+# Phase 9b-mech measurement records: the evidence behind a reported finding,
+# same rationale as the final parquet. 2.5 MB, regenerable but slow.
+!data/results/physarum_warm_mechanism.jsonl
