@@ -279,7 +279,84 @@ validate a resilience framework" being accepted practice.
 
 ---
 
-### 6. Physarum theory that may explain our extraction failure
+### 6a. The transition-point paper — **READ IN FULL. THIS IS THE ONE.**
+
+"When does the Physarum Solver Distinguish the Shortest Path from other Paths:
+the Transition Point and its Applications" — <https://arxiv.org/pdf/2101.02913>
+(IEEE Transactions submission format). **Read 2026-10-18 from the PDF.**
+
+**THEIR "D-PATH" IS OUR `max_flux_walk`. Same algorithm, independently
+named.** Their procedure, quoted: starting from the start node, "find all the
+nodes and their corresponding edges that are connect to the current last
+element", then "among the edges found in the second step, find the edge that
+contains the maximum flow", move there, and "delete the current last element
+of ListNode and its corresponding edges from the graph" — i.e. a greedy
+maximum-flux walk with a visited/tabu rule, repeated "until the next element we
+found in Step iv is the ending node".
+
+**THE CLAIM WE CONTRADICT, in their words:**
+
+> "after the convergence of the OPPA, the algorithm will direct most (or even
+> all) of the inflow to the shortest path; thus, **when the OPPA converges, the
+> D-Path generated is exactly the shortest path of the graph**"
+
+**We measured that on a real directed road network and it is false there.** At
+the convergence iteration the max-flux walk completes a path on **43.0%** of
+solves and matches the optimum on **23.3%** (Phase 8e / 9b-mech). Their entire
+proposed termination criterion (OPPA-D) rests on the D-Path having converged to
+the shortest path and *staying* there — they report `L_D-Path` "converges to the
+length of the shortest path" well before the conductivity criterion fires.
+**Phase 9b-mech found the opposite tail behaviour: the walk is best early and
+DEGRADES as the field converges** (completion 69.8% at some iteration → 43.0%
+at the final one; cold's walk gets significantly worse as its own field
+converges, p=1.2e-06).
+
+**WHY BOTH CAN BE TRUE — and this is the paper's cleanest contribution.**
+Look at what they test on:
+
+| Their networks | Size | Degree |
+|---|---|---|
+| Motivating demo | **5 nodes, COMPLETE** | 4 |
+| `Da-Com-1..8` | 50–5,000 nodes, **complete** | up to 5,000 |
+| `Da-SW-1..8` | 50–5,000, Watts–Strogatz | **mean degree 6 to 600** |
+| `Da-R-1` Sioux Falls | 24 nodes, 76 edges | ~3.2 |
+| `Da-R-2` Anaheim | 416 nodes, 914 edges | ~2.2 |
+
+**Ours: 2,856 nodes, 7,015 edges, mean out-degree 2.46, pervasive one-ways.**
+
+And the governing assumption, quoted: *"Note that G is assumed to be an
+**undirected** connected graph without cycles and negative-weight edges"*.
+
+**On a complete graph the max-flux walk CANNOT dead-end** — every remaining
+node is adjacent, so a next step always exists. On a mean-degree-600
+small-world it essentially cannot either. The failure mode we spend three
+phases on is structurally unreachable on most of their test set. Their two real
+transport networks are the interesting exception (Anaheim's ~2.2 is comparable
+to ours), but the model is still applied as undirected, which is precisely the
+constraint that breaks our extraction.
+
+**POSITIONING, ready to write:**
+
+> The D-Path construction is the standard max-flux extraction, and prior work
+> treats its convergence to the shortest path as reliable enough to serve as a
+> termination criterion. That holds on complete and high-degree synthetic
+> graphs, where the walk cannot dead-end. On a real road network with mean
+> out-degree 2.46 and one-way constraints, it does not: at the conductivity
+> convergence point the walk completes a path on 43.0% of solves and matches
+> the optimum on 23.3%, and its reliability *decreases* as the field converges.
+
+**This also reframes our stopping-rule experiment.** Testing whether an earlier
+stopping rule helps is not a loose idea of mine — it is testing **their OPPA-D
+criterion on a substrate they did not test**. Cite OPPA-D as the prior art and
+report whether it transfers.
+
+**Cite approvingly:** they make the methodological point that some accelerated
+Physarum variants' apparent speedups come from an "inappropriate termination
+criterion". That is the same species of argument as our provenance finding —
+a reported number that is really a statement about bookkeeping — and it shows
+the field already takes this class of error seriously.
+
+### 6b. Other Physarum theory
 
 - **"When does the Physarum Solver Distinguish the Shortest Path from other
   Paths: the Transition Point and its Applications"** —
@@ -363,7 +440,12 @@ paper, since anyone doing this work would likely cite one of them.
    cite the literature's own statement that the model is "designed only for
    undirected networks", which turns our extraction finding from a possible
    implementation defect into a measurement of an acknowledged limitation.**
-3. **Read the transition-point paper.** If theory already predicts when
+3. ~~Read the transition-point paper.~~ **DONE 2026-10-18, read in full from
+   the PDF. It is the most important paper in this list. Their D-Path IS our
+   max-flux walk, and their termination criterion rests on a claim we measured
+   as false on a directed road network. Their test graphs are complete or
+   mean-degree 6-600 and explicitly undirected, where the walk cannot
+   dead-end. Cite OPPA-D as the prior art our stopping-rule result tests.** If theory already predicts when
    the Physarum solver fails to separate the shortest path, our 23.3% is a
    confirmation on a new substrate rather than a discovery, and the paper must
    be framed accordingly.
