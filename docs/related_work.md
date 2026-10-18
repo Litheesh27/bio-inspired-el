@@ -145,13 +145,95 @@ validate a resilience framework" being accepted practice.
 
 ---
 
+### 6. Physarum theory that may explain our extraction failure
+
+- **"When does the Physarum Solver Distinguish the Shortest Path from other
+  Paths: the Transition Point and its Applications"** —
+  <https://arxiv.org/pdf/2101.02913>
+- **"Physarum Can Compute Shortest Paths"** (Bonifaci et al., the convergence
+  proof; our `D <- |Q|` config switch is this variant) —
+  <https://www.researchgate.net/publication/228065551_Physarum_Can_Compute_Shortest_Paths>
+
+**Read the transition-point paper before interpreting our 23.3% walk-only
+exact-match rate.** If there is existing theory on the conditions under which
+the Physarum solver separates the shortest path from competitors, it may
+predict our result rather than be surprised by it — in which case our
+contribution is the *measurement on a real directed network*, not the discovery
+that the walk is weak. It may also identify a parameter regime (our `theta`,
+`mu`, `dt`, or the iteration budget) where separation does occur, which would
+be a legitimate "we did not tune into that regime" limitation to disclose
+rather than a finding.
+
+Bonifaci proves convergence for the continuous dynamics on *undirected* graphs.
+Our Phase 8c mechanism is that the pressure field is solved on an undirected
+projection while the extracted path must be directed-legal. Worth checking
+whether the proof's assumptions are violated by our directed extraction step —
+if so, that is a clean theoretical framing for the whole provenance finding.
+
+### 7. Physarum on a real transport network, benchmarked against Dijkstra
+
+**Traffic optimization in railroad networks using an algorithm mimicking
+Physarum plasmodium** (Biosystems) —
+<https://www.sciencedirect.com/science/article/abs/pii/S0303264711000803>
+
+Applies a modified Physarum model to the **Tokyo rail network** with Dijkstra
+as the comparison, evaluating cost, travelling efficiency and **network
+weakness**. This is the closest existing work to ours on two axes at once: a
+real transport network, and a disruption-adjacent measure. It is rail rather
+than road (no one-ways, far smaller, no turn restrictions, and the topology is
+engineered rather than organically grown), has no ACO arm, and no
+simulator-generated congestion.
+
+**This is the paper our "real network" novelty has to be stated against.**
+Claiming "first on a real network" would be wrong; the accurate claim is first
+on a real *road* network with directed constraints and simulator congestion,
+with all three methods, measuring recovery.
+
+---
+
+## Queries run (2026-10-18)
+
+Recorded so the novelty check is reproducible rather than anecdotal.
+
+1. `Physarum polycephalum ant colony optimization Dijkstra comparison road network routing benchmark`
+2. `bio-inspired routing resilience road network disruption recovery SUMO simulation 2025 2026`
+3. `Physarum slime mould algorithm road network resilience edge removal recovery adaptive reroute`
+4. `ant colony optimization OpenStreetMap Indian city road network shortest path Bengaluru Bangalore routing study`
+5. `Physarum model SUMO traffic simulator time-varying congestion travel time routing`
+6. `"slime mould" OR "Physarum" "ant colony" Dijkstra three-way comparison urban road network disruption`
+
+**Result: no source combining all three methods + real road network + simulated
+congestion + disruption recovery.** Query 5 specifically found **no work
+combining Physarum with SUMO at all**, which is the strongest single support
+for the novelty claim.
+
+Still outstanding before submission: a database pass on IEEE Xplore, Scopus and
+Google Scholar, plus a forward-citation sweep of Zhang 2014 and the Tokyo rail
+paper, since anyone doing this work would likely cite one of them.
+
+---
+
 ## What to do with this before writing
 
 1. **Read Zhang 2014 properly first.** Its extraction step determines whether
    our headline provenance finding is a general critique or a local defect.
    Nothing else in the reading list changes the paper's framing as much.
-2. Check whether the goal-directed ACO paper evaluates under congestion.
-3. Run a systematic database pass and record the queries, so the novelty claim
-   in the paper is backed by a reproducible search rather than by four
-   ad-hoc web searches.
-4. Only then write the related-work section.
+2. **Read the transition-point paper second.** If theory already predicts when
+   the Physarum solver fails to separate the shortest path, our 23.3% is a
+   confirmation on a new substrate rather than a discovery, and the paper must
+   be framed accordingly.
+3. **Fix the novelty sentence.** The Tokyo rail paper means "first on a real
+   network" is false. The defensible claim is: first three-way benchmark on a
+   real *road* network with directed constraints and simulator-generated
+   congestion, measuring recovery from closures as well as path quality.
+4. Check whether the goal-directed ACO paper evaluates under congestion. If it
+   is free-flow only, we extend rather than contradict it.
+5. Run the database pass listed above and add its queries to the record.
+6. Only then write the related-work section.
+
+**One standing risk.** Three of the six leads above could each weaken a claim
+we currently make. That is the expected shape of an honest literature check,
+and none of them touches the measurements themselves — the sweep, the paired
+statistics and the provenance split stand regardless. What they can change is
+how the contribution is *framed*, which is cheaper to fix now than after a
+reviewer finds it.
