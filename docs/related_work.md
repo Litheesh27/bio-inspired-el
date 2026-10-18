@@ -118,16 +118,64 @@ complete would be 105), and does not reconcile the two.
 5 and 9 — the ACO accuracy curve in Figure 9 is the one number that would let
 us compare their ACO degradation directly against our tercile result.
 
-### 1b. The same group's DIRECTED variant — **MUST READ NEXT**
+### 1b. The same group's DIRECTED variant — **CHECKED. IT EXISTS.**
 
-"An improved bio-inspired algorithm for the directed shortest path problem" —
+Zhang, Zhang & Deng, "An improved bio-inspired algorithm for the directed
+shortest path problem", *Bioinspiration & Biomimetics* **9**(4) 046016, 2014.
+DOI <https://doi.org/10.1088/1748-3182/9/4/046016>. Record:
 <https://research.polyu.edu.hk/en/publications/an-improved-bio-inspired-algorithm-for-the-directed-shortest-path/>
+Precursor: Zhang, Zhang, Zhang & Deng (2012) modified the Physarum model for
+directed graphs, "noting that the classical algorithm could not handle
+directed graphs".
 
-Same research group, and it addresses **precisely** the gap identified above.
-If they solved directed Physarum routing, our "directed legality breaks the
-extraction" finding must be positioned against their solution rather than
-presented as an open problem. **Read this before writing a single sentence
-about directedness being unaddressed in the literature.**
+**TWO CONSEQUENCES, AND THE FIRST ONE IS GOOD FOR US.**
+
+**(a) The literature itself states the limitation we measured.** The abstract
+describes the Physarum path-finding model as one "which is designed only for
+undirected networks". So our Phase 8c mechanism — the pressure field is solved
+on an undirected projection while an extracted path must be directed-legal —
+is **not a strawman we invented and not a defect of our implementation**. It is
+the canonical model's acknowledged scope, confirmed in print by the group that
+went on to extend it. That is a citation we should use, and it removes the
+"you implemented it wrong" line of attack entirely.
+
+**(b) WE CANNOT CLAIM DIRECTEDNESS IS AN UNADDRESSED GAP, AND WE MUST DISCLOSE
+THAT WE DID NOT IMPLEMENT THE DIRECTED VARIANT.** A directed Physarum
+formulation has existed since 2014. Our benchmark uses the canonical
+undirected-projection model. A reviewer will ask why, and the paper must answer
+before they ask. The honest statement:
+
+> We benchmark the canonical Tero-style conductivity model, whose pressure
+> field is defined on an undirected projection. A directed formulation via
+> analog circuit analysis exists (Zhang, Zhang & Deng 2014); we did not
+> implement it, so our extraction results characterise the canonical model on a
+> directed road network and should not be read as a limit on Physarum-style
+> methods in general. Benchmarking the directed formulation on this network is
+> the obvious next experiment.
+
+**What survives, and it is still worth reporting.** Their paper reports
+"illustrative examples"; it is not a quantitative benchmark on a real network
+under congestion with disruption. Our contribution is the measurement — 5,520
+runs, paired statistics, and the provenance split — not the observation that
+directedness is hard. **Reframe the extraction finding from "we discovered the
+model cannot handle one-ways" to "we quantified what the canonical model's
+undirected projection costs on a real directed road network, which the
+literature flags qualitatively and had not measured."**
+
+Not yet read in full (paywalled at IOP; Scopus record
+<https://www.scopus.com/pages/publications/84914125447>, 6 citations). Worth
+getting through an institutional login before submission, to check whether
+their directed model would even be applicable here and what its cost is.
+
+### 1c. Physarum applied to traffic assignment
+
+"A modified Physarum-inspired model for the user equilibrium traffic assignment
+problem" — <https://arxiv.org/pdf/1612.06174>
+
+Physarum applied to *traffic*, which is adjacent to our setting, though it
+solves user-equilibrium assignment rather than point-to-point routing. Relevant
+to the related-work framing and to the BPR side of Phase 2d, since UE
+assignment is exactly what our BPR provider approximates. Unread.
 
 **The single most important paper for us to engage with.** Reportedly compares
 Physarum against *both* Dijkstra and ACO, on synthetic graphs of 15–2,000
@@ -308,8 +356,13 @@ paper, since anyone doing this work would likely cite one of them.
    network it does not, which is what makes extraction decisive and the
    two-series split necessary.** Still outstanding: read Figures 4/5/9 off the
    PDF for their ACO accuracy curve.
-2. **Read the same group's DIRECTED variant (1b) before claiming directedness
-   is unaddressed.** This is now the biggest open risk to our framing.
+2. ~~Read the directed variant before claiming directedness is unaddressed.~~
+   **DONE 2026-10-18 — it exists (Zhang, Zhang & Deng 2014). Two edits follow
+   from it: (i) we must NOT claim directedness is an unaddressed gap, and must
+   disclose that we did not implement the directed formulation; (ii) we SHOULD
+   cite the literature's own statement that the model is "designed only for
+   undirected networks", which turns our extraction finding from a possible
+   implementation defect into a measurement of an acknowledged limitation.**
 3. **Read the transition-point paper.** If theory already predicts when
    the Physarum solver fails to separate the shortest path, our 23.3% is a
    confirmation on a new substrate rather than a discovery, and the paper must
