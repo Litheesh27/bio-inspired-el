@@ -48,14 +48,14 @@ with-fallback curve sits at stretch 1.0 from iteration one, because it was
 Dijkstra's answer before the model did any work. We therefore report
 Physarum as two labelled series throughout and never pool them.
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\columnwidth]{fig01_convergence.pdf}
+\includegraphics[width=\textwidth]{fig01_convergence.pdf}
 \caption{Cost versus iteration across three distance strata. The Physarum
 with-fallback series starts at stretch 1.0 in two of three panels: that is
 the fallback, not convergence.}
 \label{fig:cconv}
-\end{figure}
+\end{figure*}
 
 For context, ACO reaches 43.3\%/44.0\% exact match with median stretch
 1.0052 (light) and 1.0209 (heavy), and Dijkstra and A* are exact by
@@ -108,13 +108,13 @@ a spurious 24$\times$. And \textbf{per-iteration cost is essentially
 identical} warm versus cold (0.0511 vs 0.0538\,s), establishing that the
 saving is fewer iterations rather than cheaper ones.
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\columnwidth]{fig07_warm_vs_cold.pdf}
+\includegraphics[width=\textwidth]{fig07_warm_vs_cold.pdf}
 \caption{Warm versus cold recovery. The mode at exactly one iteration is the
 shape of the result and the reason we report paired ratios.}
 \label{fig:cwc}
-\end{figure}
+\end{figure*}
 
 \textbf{The cost.} On the reported path, paired across all 358 cells, cold
 start is better: cold wins 57, warm 11, 290 ties
@@ -135,15 +135,15 @@ a thin corridor}: convergence alone, with no closure, drops completion from
 69.8\% to 43.0\%, and cold start's advantage is that it rewinds the field to
 a walkable state.
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\columnwidth]{fig04_pareto_recovery_vs_quality.pdf}
+\includegraphics[width=\textwidth]{fig04_pareto_recovery_vs_quality.pdf}
 \caption{The speed-versus-quality trade. Markers are medians with IQR arms
 over the individual S1--S6 recovery runs; Dijkstra and A* anchor the lower
 left. The model-only and pooled Physarum series share the same runs, so
 \emph{the vertical gap between them is the fallback's contribution}.}
 \label{fig:cpareto}
-\end{figure}
+\end{figure*}
 
 \subsection{What adaptation contributes}
 

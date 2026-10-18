@@ -42,6 +42,19 @@
 \setlength{\abovecaptionskip}{4pt}
 \setlength{\belowcaptionskip}{2pt}
 
+% Three of the figures are full-width (figure*) because they are generated at
+% 7.16in, IEEE's full text width. Double-column floats may only sit at the top
+% of a page, so without these they drift pages away from the text that cites
+% them, or pile up on a float page at the end.
+\setcounter{topnumber}{2}
+\setcounter{dbltopnumber}{2}
+\setcounter{totalnumber}{4}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\dbltopfraction}{0.9}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.7}
+\renewcommand{\dblfloatpagefraction}{0.7}
+
 % IEEEtran does NOT define \linebreakand. Without this the five-author block
 % collapses into one overfull halign row and the authors stagger instead of
 % laying out 2/2/1. Definition taken from our previous submission, where it
@@ -69,11 +82,11 @@ Classical Shortest-Path Algorithms}
 Bengaluru, India \\
 1RV25CS076}
 \and
-\IEEEauthorblockN{Manas Saxena}
+\IEEEauthorblockN{Karan Koder}
 \IEEEauthorblockA{\textit{Dept. of Computer Science and Engineering} \\
 \textit{RV College of Engineering}\\
 Bengaluru, India \\
-1RV25CS096}
+1RV25CS080}
 \linebreakand
 \IEEEauthorblockN{Kushal Gowda S}
 \IEEEauthorblockA{\textit{Dept. of Computer Science and Engineering} \\
@@ -87,8 +100,8 @@ Bengaluru, India \\
 Bengaluru, India \\
 1RV25CS107}
 \linebreakand
-\IEEEauthorblockN{Prof. Nithyashree G D}
-\IEEEauthorblockA{\textit{Dept. of Computer Science and Engineering} \\
+\IEEEauthorblockN{Dr. Lingayya Hiremath}
+\IEEEauthorblockA{\textit{Dept. of Biotechnology} \\
 \textit{RV College of Engineering}\\
 Bengaluru, India \\
 Faculty Mentor}
