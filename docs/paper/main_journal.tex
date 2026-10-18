@@ -28,8 +28,11 @@
 Ant Colony Optimization and Physarum versus\\
 Classical Shortest-Path Algorithms}
 
-% \linebreakand is provided by IEEEtran in conference mode only; this
-% guard lets the identical author block compile in journal mode too.
+% NOTE: \linebreakand is NOT an IEEEtran command; the conference version
+% defines it explicitly (see main.tex). That definition relies on
+% @IEEEauthorhalign, which journal mode does not use for \author, so this
+% file keeps a degraded \and fallback purely so it still compiles. The
+% 2/2/1 author layout is a CONFERENCE-mode result and will not appear here.
 \providecommand{\linebreakand}{\and}
 \author{
 \IEEEauthorblockN{K Karthik Pai}

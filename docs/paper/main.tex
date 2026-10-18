@@ -16,18 +16,41 @@
 \documentclass[conference]{IEEEtran}
 \IEEEoverridecommandlockouts
 
-% Preamble kept as close as possible to the stock IEEE conference template,
-% because the author block below is the one from our previous submission and
-% depends on that template's defaults. In particular do NOT add fontenc or
-% inputenc here: the stock template omits both, and the five-author block
-% with \linebreakand is sensitive to the author halign's natural widths.
+% Preamble follows the stock IEEE conference template plus the additions our
+% previous submission uses, because the author block below is that paper's
+% block and is known to render correctly under exactly this preamble.
+% fontenc/inputenc are deliberately absent, as in the stock template.
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{booktabs}
+\usepackage{multirow}
 \usepackage{url}
+\usepackage{float}
+\usepackage{placeins}
+\usepackage{balance}
+
+% Tighter float/caption spacing, to keep the paper inside its page budget
+% without touching any wording.
+\setlength{\textfloatsep}{8pt plus 2pt minus 2pt}
+\setlength{\floatsep}{6pt plus 2pt minus 2pt}
+\setlength{\intextsep}{6pt plus 2pt minus 2pt}
+\setlength{\abovecaptionskip}{4pt}
+\setlength{\belowcaptionskip}{2pt}
+
+% IEEEtran does NOT define \linebreakand. Without this the five-author block
+% collapses into one overfull halign row and the authors stagger instead of
+% laying out 2/2/1. Definition taken from our previous submission, where it
+% is known to render correctly.
+\makeatletter
+\newcommand{\linebreakand}{%
+    \end{@IEEEauthorhalign}
+    \hfill\mbox{}\par
+    \mbox{}\hfill\begin{@IEEEauthorhalign}
+}
+\makeatother
 
 \graphicspath{{figures/}{../../figures/ieee/}}
 
@@ -106,6 +129,7 @@ network resilience, traffic simulation, benchmarking.
 \input{conf/04_results}
 \input{conf/05_discussion}
 
+\balance
 \bibliographystyle{IEEEtran}
 \bibliography{refs}
 
