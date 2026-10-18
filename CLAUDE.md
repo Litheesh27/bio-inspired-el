@@ -625,10 +625,11 @@ bio_el/
 └── tests/
 ```
 
-Every `src/bioroute/**` package has an `__init__.py`. Every module currently
-contains ONLY a docstring stating which phase implements it and what it will
-contain — no placeholder logic. Read a module's docstring before writing to
-it; it tells you the intended contract.
+Every `src/bioroute/**` package has an `__init__.py`. **All modules are now
+implemented** (that sentence used to say they were docstring-only stubs; that
+was true at Phase 0 and is long stale). `viz/` additionally contains
+`stats.py`, `traces.py` and `style.py`, which the tree above predates. Read a
+module's docstring before writing to it; it states which phase owns it.
 
 ## Invariants (non-negotiable)
 
@@ -667,16 +668,24 @@ it; it tells you the intended contract.
 .venv/Scripts/python.exe scripts/05_export_web.py               # Phase 9: dashboard JSON bundle
 ```
 
-`scripts/01` through `05` do not exist yet; each is created by the phase
-noted above. Currently only `00_setup_check.py` exists and is expected to
-fail its SUMO checks (SUMO is not installed on this machine) while every
-other check passes.
+**STALE-DOC WARNING REMOVED:** this used to say scripts 01-05 did not exist
+and that SUMO was not installed. Both are long false. All of
+`00_setup_check.py` … `06_make_traces.py` exist, SUMO 1.27.1 is installed at
+`C:\Sumo`, and the full pipeline has been run end to end. Additional scripts
+not listed above: `scripts/06_make_traces.py` (figures 1/5/6),
+`scripts/04_make_figures.py --ieee` and `scripts/06_make_traces.py --ieee`
+(IEEE two-column variants into `figures/ieee/`, PDFs tracked), and
+`scripts/measure_*.py` (one-off measurement experiments).
 
 ## Honest-reporting note
 
 Dijkstra will beat both bio-inspired methods on raw wall-clock recovery — a
 recompute on a 5k-node graph is milliseconds, ACO and Physarum take seconds.
 This is expected and must be reported, not hidden. The interesting, defensible
-metrics are iterations-to-adapt, time-to-first-valid-path, and
-post-disruption path quality — that is the actual speed-vs-quality trade
-this project quantifies.
+metrics are **iterations-to-adapt and post-disruption path quality** — that is
+the actual speed-vs-quality trade this project quantifies.
+**CORRECTED:** this sentence used to list time-to-first-valid-path as a third
+defensible metric. The Phase 9 audit found that column is exactly 1.0 on all
+5,012 disrupted rows with zero variance, so it discriminates nothing and is
+excluded from every reported metric. `docs/PLAN.md` still names it and is
+superseded on this point.
