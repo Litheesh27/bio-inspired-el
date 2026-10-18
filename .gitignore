@@ -53,3 +53,7 @@ docs/paper/*.fdb_latexmk
 # The compiled conference paper IS tracked: it is the deliverable, and
 # the repo should not depend on Overleaf to show what was submitted.
 !docs/paper/bioroute_conference_paper.pdf
+
+# Staged by scripts/05_export_web.py so a local server can serve the page.
+# Copies of figures/, which is tracked, so these are derived.
+web/figures/

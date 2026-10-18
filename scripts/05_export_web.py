@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -23,6 +25,39 @@ sys.path.insert(0, str(ROOT / "src"))
 from bioroute.viz import export, stats, traces  # noqa: E402
 
 DEFAULT_OUT = ROOT / "web" / "data" / "bundle.json"
+
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+def stage_figures(out_path) -> int:
+    """Copy the figure PNGs next to the page so a local server can serve them.
+
+    `web/index.html` loads `figures/*.png` RELATIVE TO ITSELF. The published
+    artifact renders because those files are uploaded into its own tree, but
+    `python -m http.server` inside `web/` has nothing to serve unless they are
+    put there too, so every figure 404s. Staged rather than tracked: these are
+    copies of `figures/`, which is already in git.
+    """
+    web_dir = Path(out_path).resolve().parent
+    if web_dir.name == "data":
+        web_dir = web_dir.parent
+    src_dir = REPO_ROOT / "figures"
+    dst_dir = web_dir / "figures"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
+    names = sorted(p.name for p in src_dir.glob("*.png"))
+    for name in names:
+        shutil.copy2(src_dir / name, dst_dir / name)
+
+    page = web_dir / "index.html"
+    if page.is_file():
+        refs = re.findall(r'src="figures/([^"]+)"', page.read_text(encoding="utf-8"))
+        missing = [r for r in refs if not (dst_dir / r).is_file()]
+        if missing:
+            print("  WARNING: the page references figures that do not exist: "
+                  + ", ".join(missing), flush=True)
+    return len(names)
 
 
 def main() -> int:
@@ -108,6 +143,8 @@ def main() -> int:
 
     path, size = export.write_bundle(args.out, bundle)
     print(f"\nbundle: {path}  ({size/1e6:.2f} MB)", flush=True)
+    n_figs = stage_figures(args.out)
+    print(f"staged {n_figs} figure PNG(s) next to the page", flush=True)
     if skipped:
         print(f"skipped {len(skipped)} cell(s) (recorded in the bundle):", flush=True)
         for s in skipped:

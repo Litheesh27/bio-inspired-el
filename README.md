@@ -228,15 +228,24 @@ assertion is a standing marker for a genuinely missed exit criterion (see
 
 ### Viewing the dashboard locally
 
-`web/index.html` fetches `web/data/bundle.json`, which browsers block over
-`file://`. Serve it instead:
+Run the export first, then serve `web/`:
 
 ```
+.venv\Scripts\python.exe scripts\05_export_web.py
 cd web
 ..\.venv\Scripts\python.exe -m http.server 8000
 ```
 
 then open <http://localhost:8000>.
+
+Two reasons the export step is not optional. `web/index.html` fetches
+`web/data/bundle.json`, which browsers block over `file://`, so the page has
+to be served rather than opened. And the page loads `figures/*.png`
+*relative to itself*: `scripts/05_export_web.py` stages copies into
+`web/figures/`, which is gitignored because the originals are tracked in
+`figures/`. Serving `web/` without running the export gives a page whose
+figures all 404 — the published artifact does not show this, because its
+copies are uploaded into the artifact's own file tree.
 
 ---
 
