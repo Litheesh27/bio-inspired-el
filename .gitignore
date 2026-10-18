@@ -49,3 +49,7 @@ docs/paper/*.fdb_latexmk
 # Reference PDFs and compiled output kept locally, not tracked
 /IEEE_Conference_Template__2_.pdf
 /bioroute_paper_overleaf*.pdf
+
+# The compiled conference paper IS tracked: it is the deliverable, and
+# the repo should not depend on Overleaf to show what was submitted.
+!docs/paper/bioroute_conference_paper.pdf
