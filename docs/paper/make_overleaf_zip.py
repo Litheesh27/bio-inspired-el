@@ -23,6 +23,9 @@ OUT_ZIP = os.path.join(PAPER_DIR, "bioroute_paper_overleaf.zip")
 # list if a new figure is referenced, rather than shipping all seven.
 FIGURES = [
     "fig01_convergence.pdf",
+    "fig02_recovery_by_scenario.pdf",
+    "fig03_stretch_pre_post.pdf",
+    "fig04_pareto_recovery_vs_quality.pdf",
     "fig07_warm_vs_cold.pdf",
 ]
 

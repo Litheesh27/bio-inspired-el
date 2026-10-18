@@ -143,6 +143,16 @@ Physarum  & cold & 358 & 98.0 & 5.661 & 0\% \\
 \end{tabular}
 \end{table}
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig02_recovery_by_scenario.pdf}
+\caption{Recovery iterations by closure severity. Dijkstra and A* collapse to
+a line at one iteration. S0 is absent by construction: it has no recovery to
+measure, and plotting its nulls as zeros would fabricate a measurement. The
+warm panel omits the classical routers, which have no warm mode.}
+\label{fig:byscenario}
+\end{figure}
+
 \textbf{Dijkstra wins on wall-clock and we report it plainly.} A recompute on
 this graph costs about 31\,ms; the bio-inspired methods take seconds. The
 interesting quantities are iterations-to-adapt and post-disruption quality.
@@ -185,6 +195,16 @@ start is better: cold wins on 57 cells, warm on 11, with 290 ties
 315). On the \textbf{model's own extraction}, the warm maximum-flux walk
 completes a path on only 36.3\% of recoveries against cold's 59.5\%.
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig03_stretch_pre_post.pdf}
+\caption{Path quality before and after a closure. Counts beneath each pair are
+$n$(pre)\,/\,$n$(post). The two Physarum series are never pooled: the
+model-only series is null --- not zero --- on runs where the walk never
+completed a path, so its $n$ is smaller by construction.}
+\label{fig:prepost}
+\end{figure}
+
 An earlier version of this analysis compared the walk's quality unpaired,
 across samples of different size, and reported the opposite sign. On the 126
 cells where both complete, cold's walk appeared marginally better (1.0127
@@ -221,6 +241,20 @@ closure anywhere, drops completion from 69.8\% to 43.0\%. Cold start's
 advantage is not that it explores more freely relative to the closure --- it
 is that it \emph{rewinds the field to the uniform state the walk can
 traverse}.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig04_pareto_recovery_vs_quality.pdf}
+\caption{The speed-versus-quality trade, and the direct answer to the
+question this paper asks. One marker per series and start mode at the median,
+with IQR arms on both axes, over a scatter of individual S1--S6 recovery
+runs. Dijkstra and A* anchor the lower left: exact paths in one iteration and
+roughly 30\,ms. The model-only Physarum series uses the same runs as the
+pooled one, so its $x$ is identical and only its $y$ differs --- \emph{the
+vertical gap between the two Physarum markers is the fallback's
+contribution}.}
+\label{fig:pareto}
+\end{figure}
 
 \subsection{What adaptation actually contributes}
 \label{sec:adaptation}

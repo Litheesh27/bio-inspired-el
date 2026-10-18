@@ -110,6 +110,16 @@ a thin corridor}: convergence alone, with no closure, drops completion from
 69.8\% to 43.0\%, and cold start's advantage is that it rewinds the field to
 a walkable state.
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig04_pareto_recovery_vs_quality.pdf}
+\caption{The speed-versus-quality trade. Markers are medians with IQR arms
+over the individual S1--S6 recovery runs; Dijkstra and A* anchor the lower
+left. The model-only and pooled Physarum series share the same runs, so
+\emph{the vertical gap between them is the fallback's contribution}.}
+\label{fig:cpareto}
+\end{figure}
+
 \subsection{What adaptation contributes}
 
 This invites the conclusion that the model should stop earlier. Against a

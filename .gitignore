@@ -45,3 +45,7 @@ docs/paper/*.log
 docs/paper/*.out
 docs/paper/*.fls
 docs/paper/*.fdb_latexmk
+
+# Reference PDFs and compiled output kept locally, not tracked
+/bioroute_paper_overleaf.pdf
+/IEEE_Conference_Template__2_.pdf
