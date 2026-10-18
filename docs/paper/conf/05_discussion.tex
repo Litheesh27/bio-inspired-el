@@ -1,0 +1,77 @@
+\section{Discussion}
+
+\textbf{Why a real road network was necessary.} The maximum-flux walk fails
+by \emph{dead-ending} --- reaching a node with no admissible unvisited
+successor. On a complete graph that is impossible, and on a small-world of
+mean degree 6--600 it is vanishingly rare. Our network has mean out-degree
+2.46, and the undirected pressure solve routinely prefers a direction the
+road forbids. The failure mode we measure is structurally unreachable on the
+substrates where this model's accuracy was established. That reframes the
+disagreement with prior work as a matter of domain rather than correctness:
+Zhang et al.\ need no extraction machinery at all because on
+Erd\H{o}s--R\'enyi graphs the flux separates
+cleanly~\cite{zhang2014improved}, and Wang et al.\ are describing undirected
+graphs where the walk cannot dead-end~\cite{wang2021transition}. Neither is
+wrong. What changes on a directed, sparse, organically grown network is that
+extraction stops being a formality and becomes the step that decides the
+reported outcome.
+
+\textbf{Provenance as a reporting requirement.} A Physarum accuracy figure
+on such a network is a statement about the extraction policy at least as
+much as about the model, and a pooled number is unfalsifiable --- our 90\%
+and our 23.3\% come from the same solves. Any evaluation of this model class
+on a directed network should publish the provenance distribution of its
+reported paths, and a model whose fallback is a shortest-path algorithm
+should report what share of its results that fallback produced. The stakes
+are concrete: a stranded-component degeneracy we found and fixed caused
+non-finite pressures under which every flux and threshold test silently
+failed, producing a fabricated mean stretch of exactly 1.000 on the
+scenario where the model is weakest, with no error raised. Provenance
+instrumentation is what made it visible.
+
+\textbf{What self-healing is worth here.} The adaptive state is real and
+substantial --- single-iteration recovery on nearly half of all closures, at
+unchanged per-iteration cost, which is the strongest form of the claim we can
+support. But it is paid for in path quality, on both the reported path and
+the model's own extraction. A system that must guarantee route quality after
+a closure should prefer a cold solve or a recompute; one that must respond
+within a single adaptation step and can tolerate a few percent of path cost
+is where retained state pays. Neither conclusion follows from the speed
+measurement alone. And the baseline stands: Dijkstra recomputes an exact
+route in about 31\,ms here, so on a network of this size recomputation is
+simply the right engineering answer, and the case for adaptive methods must
+rest on regimes we did not test --- far larger networks, many simultaneous
+commodities, or settings where the cost function is not globally observable.
+
+\textbf{Limitations.} One city and one bounding box; the structural
+properties we argue are decisive are common to dense organically grown
+cities but transfer is not demonstrated. Congestion comes from synthetic
+demand rather than calibrated counts, which is where the closest recent ACO
+work is stronger~\cite{tuan2026improved}; we traded measured demand for a
+controlled, repeatable closure protocol over a full directed street network.
+Absolute times are optimistic because the shared baseline re-annotates
+free-flow speeds, so we report only ratios. Physarum is run per OD pair
+rather than as multi-commodity flow, and we did not implement the directed
+formulation~\cite{zhang2014directed}, so our extraction findings
+characterise the canonical model on a directed network --- an acknowledged
+limitation of that model --- rather than the limits of Physarum-style
+methods in principle. ACO was tuned while Physarum was near-default, a real
+asymmetry, though the extraction findings concern a structural failure mode
+rather than a parameter setting.
+
+\section{Conclusion}
+
+Benchmarking classical, ant-colony and Physarum routing on a real directed
+road network under microsimulated congestion, over 5{,}520 paired runs, we
+find that the self-healing claim holds in its strongest form --- warm start
+recovers in a single iteration on 48.3\% of closures, which cold start never
+achieves, at unchanged per-iteration cost --- but that it is a trade, being
+significantly worse on the reported post-disruption path. The finding we
+think matters most is methodological: a Physarum model emits a field, not a
+route, and on a sparse directed network the extraction step decides the
+answer. Pooled, our Physarum matches the optimum on 90\% of pairs; using
+only its own walk, 23.3\%; on warm recoveries it returns Dijkstra's path
+two-thirds of the time. Because the median stretch is exactly 1.000 inside
+every provenance class, a pooled figure cannot be falsified, and we argue
+provenance should be reported as a matter of course. Throughout, Dijkstra
+remained the honest baseline that no method here approached on wall-clock.

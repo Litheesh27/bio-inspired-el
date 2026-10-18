@@ -1,0 +1,98 @@
+\section{Method}
+
+\subsection{Network and congestion}
+
+We study a $\sim$4$\times$4\,km area of central Bengaluru (MG Road, Cubbon
+Park, Shivajinagar, Richmond Town), chosen for its irregular organically
+grown topology. The network comes from OpenStreetMap via
+OSMnx~\cite{boeing2017osmnx}, reduced to its largest strongly connected
+component: \textbf{2{,}856 nodes, 7{,}015 directed edges, mean out-degree
+2.46}. That last figure is the decisive structural property --- a node with
+out-degree two offers a walk-based extraction almost no choice, and one-way
+streets mean a direction favoured by an undirected flow computation may be
+illegal.
+
+Algorithms never see the congestion source directly: a provider returns a
+snapshot mapping each edge to a congested travel time. The primary source is
+SUMO~\cite{lopez2018microscopic} at light and heavy synthetic demand, joined
+to graph edges through OSM way IDs at \textbf{97.53\% coverage}. An analytic
+BPR volume-delay function~\cite{bpr1964} is retained as an independent
+secondary source.
+
+Two details affect correctness. Because \texttt{netconvert} splits ways that
+OSMnx merges, per-edge times must be aggregated in \emph{pace},
+$t_e = \ell_e \sum_i t_i / \sum_i \ell_i$; averaging the matched segments'
+travel times instead made 26\% of edges imply speeds above the network
+maximum and silently broke A*'s admissibility. And free-flow speeds are
+re-annotated from the generated SUMO network so numerator and denominator
+share one road model --- which raises mean free-flow speed to 51.5\,km/h, so
+\textbf{absolute times here are optimistic and only ratios are reported}.
+
+\subsection{Algorithms}
+
+Dijkstra~\cite{dijkstra1959note} on the congested weight supplies the
+reference cost for every stretch figure; A*~\cite{hart1968formal} uses a
+great-circle/max-speed heuristic and is verified equal to Dijkstra rather
+than assumed so.
+
+\textbf{MMAS}~\cite{stutzle2000maxmin} uses $\tau^{\alpha}\eta^{\beta}$ with
+$\eta = 1/t_{uv}$ and bounded pheromone. Plain MMAS does not work here: with
+mean out-degree 2.46 the ant completion rate was \emph{zero}, so we
+construct tours with backtracking plus a dead-node memo, raising completion
+from 36\% to 80\%. The memo is lossy by measurement --- about 66\% of prunes
+refuse a still-viable node --- and we document it as a deliberate heuristic.
+A goal-directed variant using A*'s heuristic is reported as an ablation, not
+the default: giving ACO target-location information Physarum never receives
+would make the comparison unfair, and it is also not better.
+
+\textbf{Physarum} carries conductivity $D_e$ and cost $L_e$ per edge, giving
+conductance $w_e = D_e/L_e$. Each iteration solves a weighted-Laplacian
+system for pressures (grounded at the sink), computes fluxes
+$Q_e = w_e \Delta p_e$, and adapts
+$D_e \leftarrow D_e + \mathrm{d}t\,(f(|Q_e|) - D_e)$ with
+$f(Q)=|Q|^{\mu}/(1+|Q|^{\mu})$~\cite{tero2007mathematical}. Convergence is
+$\max_e|\Delta D_e| < \epsilon$. \textbf{Pressures are solved on an
+undirected projection while an extracted path must be directed-legal}, which
+is the origin of most of what follows.
+
+\textbf{Extraction, and its provenance.} The model yields a field, not a
+route. We extract in three stages and record which produced the reported
+path: (i) the \emph{maximum-flux walk}, stepping to the highest-flux
+admissible successor with a visited set --- the model's own extraction, and
+procedurally identical to~\cite{wang2021transition}; (ii) a shortest-path
+search on the $D_e > \theta$ subgraph if the walk dead-ends; (iii) a
+shortest-path search on the whole graph otherwise --- \emph{this is plain
+Dijkstra}. Recording provenance per run is what makes
+Section~\ref{sec:cprov} possible; without it a Physarum stretch of 1.000 is
+unfalsifiable.
+
+Under warm start we zero severed edges' conductivity, drop them from the
+Laplacian and retain the rest; cold start resets $D$ to uniform. Closures
+remove edges but not nodes, so a stranded node yields a singular Laplacian
+and non-finite pressures, under which every flux and threshold comparison
+silently fails and extraction falls through to the Dijkstra fallback. We
+restrict the Laplacian to the source's connected component in the surviving
+graph; we rejected an epsilon floor on $D$, which would invent transport
+capacity across a closed road.
+
+\subsection{Design and statistics}
+
+Seven scenarios: no disruption (S0); one random path edge (S1); the
+highest-betweenness path edge (S2); three (S3) and five (S4) simultaneous
+path edges; a corridor, i.e. one named OSM way (S5); and an intersection
+with all incident edges (S6). Closures are chosen relative to the current
+optimal path, must leave the pair connected, and rejected candidates are
+counted.
+
+The matrix is 30 OD pairs (stratified by distance, disjoint from all tuning
+draws) $\times$ 7 scenarios $\times$ 2 demand levels $\times$ \{warm,
+cold\}: \textbf{5{,}520 runs}. ACO gets five seeds; Physarum one, justified
+by measurement (three initialisation seeds gave costs identical to four
+decimal places). All algorithms in a cell share one Dijkstra denominator.
+
+Distributions are right-skewed and, for warm Physarum, bimodal, so we report
+\textbf{median and IQR, never means}, with paired Wilcoxon signed-rank
+tests~\cite{wilcoxon1945individual} on identical (OD, scenario, level, seed)
+tuples and a two-stage clustered bootstrap (10{,}000 resamples) for
+intervals. Pre-disruption quality is deduplicated on the initial solve,
+which is identical across scenarios and start modes.

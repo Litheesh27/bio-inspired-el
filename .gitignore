@@ -33,3 +33,15 @@ figures/ieee/*.svg
 # Phase 9b-mech measurement records: the evidence behind a reported finding,
 # same rationale as the final parquet. 2.5 MB, regenerable but slow.
 !data/results/physarum_warm_mechanism.jsonl
+
+# Paper build artifacts (derived from figures/ieee/ and the .tex sources)
+docs/paper/figures/
+docs/paper/bioroute_paper_overleaf.zip
+docs/paper/*.pdf
+docs/paper/*.aux
+docs/paper/*.bbl
+docs/paper/*.blg
+docs/paper/*.log
+docs/paper/*.out
+docs/paper/*.fls
+docs/paper/*.fdb_latexmk

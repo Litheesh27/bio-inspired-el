@@ -1,0 +1,90 @@
+\section{Discussion}
+
+\subsection{Why a real road network was necessary}
+
+Each of our main findings is invisible on the graph families that dominate
+this literature, and for a structural reason rather than a matter of scale.
+
+The maximum-flux walk fails by \emph{dead-ending}: it reaches a node with no
+admissible unvisited successor. On a complete graph that is impossible, since
+every unvisited node is adjacent; on a small-world graph of mean degree 6 to
+600 it is vanishingly rare. Our network has mean out-degree 2.46, and the
+undirected pressure solve routinely prefers a direction the road forbids. The
+failure mode we spent most of this study measuring is structurally
+unreachable on the substrates where the model's accuracy was established.
+
+This reframes the disagreement with prior work as a question of domain rather
+than of correctness. Zhang et al.\ report 100\% accuracy with \emph{no}
+extraction machinery at all~\cite{zhang2014improved}, and they are entitled
+to: on Erd\H{o}s--R\'enyi graphs the flux separates cleanly and reading the
+path off is trivial. Wang et al.\ state that the dominant path at
+convergence \emph{is} the shortest path~\cite{wang2021transition}, on
+explicitly undirected graphs where the walk cannot dead-end. Neither result
+is wrong. What changes on a directed, sparse, organically grown network is
+that extraction stops being a formality and becomes the step that determines
+the reported outcome.
+
+\subsection{Provenance as a reporting requirement}
+
+The practical consequence is a reporting rule. A Physarum accuracy figure on
+a network of this kind is a statement about the extraction policy at least as
+much as about the model, and a pooled number is unfalsifiable: our own
+pooled 90\% and model-only 23.3\% come from the same solves. We would argue
+that any Physarum evaluation on a directed network should publish the
+provenance distribution of its reported paths, and that a model whose
+fallback is a shortest-path algorithm must report what share of its results
+that fallback produced.
+
+The warm-start case shows how far this can go. At 66.8\% full-graph fallback,
+a warm Physarum recovery is more likely to be Dijkstra's answer than the
+model's, and an evaluation reporting only pooled stretch would record that
+configuration as near-perfect. It was precisely such a configuration --- the
+stranded-component degeneracy of Section~\ref{sec:algorithms} --- that
+produced a fabricated mean stretch of exactly 1.000 on the scenario where
+the model is weakest, with no error raised. Instrumenting provenance is what
+made that visible.
+
+\subsection{What self-healing is actually worth here}
+
+Our answer to the motivating question is a quantified trade rather than an
+endorsement or a dismissal.
+
+The adaptive state is real and it is substantial: warm start recovers in a
+single iteration on nearly half of all closures, which cold start never
+achieves, and per-iteration cost is unchanged, so the saving is genuinely
+adaptation. That is the strongest form of the self-healing claim we can
+support, and it is stronger than any ratio we could quote.
+
+But it is paid for. Warm start is significantly worse on the reported
+post-disruption path, and it degrades the model's own extraction further
+still. A system that must guarantee route quality after a closure should
+prefer a cold solve or a recompute; one that must respond within a single
+adaptation step, and can tolerate a few percent of path cost, is the case
+where retained state pays. Neither conclusion is available from the speed
+measurement alone.
+
+Against all of this stands the baseline. Dijkstra recomputes an exact route
+in about 31\,ms on this network, and none of the bio-inspired methods comes
+close on wall-clock. For a graph of a few thousand nodes, recomputation is
+simply the right engineering answer, and the interest in these methods has to
+rest on regimes we did not test --- far larger networks, many simultaneous
+commodities, or settings where the cost function is not globally observable.
+We think it is more useful to say so than to construct a comparison the
+baseline would lose.
+
+\subsection{A methodological result about benchmarking}
+
+The congestion-model finding generalises beyond this study. We measured
+opposite signs for the effect of congestion on ACO from an analytic
+volume-delay function and from a microsimulator, on the same network with the
+same OD pairs. Both are standard and defensible choices; they differ because
+SUMO puts signal delay in the numerator but not the free-flow denominator,
+while BPR loads synthetic demand onto shortest paths, which is exactly where
+an OD-path measurement walks.
+
+A benchmark that reports results ``under congestion'' without naming the
+source is therefore not reproducible in the sense that matters, because an
+equally reasonable alternative can reverse the sign of its headline effect.
+We would encourage reporting both where feasible, treating them as brackets
+rather than as substitutes, and never merging them into a single congestion
+level.

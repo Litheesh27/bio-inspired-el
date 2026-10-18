@@ -1,0 +1,56 @@
+\section{Related Work}
+
+\textbf{Physarum shortest path.} The slime mould resolves a maze into the
+shortest connecting path~\cite{nakagaki2000maze}; Tero et al.\ formalised
+this as adapting conductivities driven by a Poiseuille-flow pressure
+solve~\cite{tero2007mathematical}, later used to reproduce Tokyo rail-like
+networks~\cite{tero2010rules}. Bonifaci et al.\ proved convergence to the
+shortest path for \emph{undirected} graphs~\cite{bonifaci2012physarum}. The
+directedness restriction is explicit in the literature: Zhang et al.\ note
+the model is designed only for undirected networks and propose a directed
+formulation~\cite{zhang2014directed}, which we do not implement. Our results
+therefore characterise the canonical model on a directed network --- an
+acknowledged limitation --- rather than reporting a defect.
+
+\textbf{The prior three-way comparison.} Combining Physarum, ACO and
+Dijkstra is not new. Zhang et al.\ benchmark exactly these
+three~\cite{zhang2014improved}, reporting that their Physarum variant and
+Dijkstra both attain optimal paths ``with one hundred percent'' while ACO
+degrades with network size, on Erd\H{o}s--R\'enyi graphs of 15--2{,}000
+nodes with static weights, no congestion and no disruption. Two points
+matter. Their method needs \emph{no} extraction machinery --- the path is
+read straight off the flux field, which separates cleanly on such graphs ---
+so we cannot claim that Physarum evaluations generally conflate provenance;
+the honest contrast is that extraction is a formality there and decisive
+here. And their ACO reaches zero optimal-path accuracy beyond 1{,}000 nodes,
+whereas ours attains 43--44\% exact match on a larger and harder network,
+which establishes our ACO as a strong baseline by the standard of the prior
+art.
+
+\textbf{Extraction and termination.} Wang et al.\ define a dominant-path
+procedure procedurally identical to our maximum-flux
+walk~\cite{wang2021transition}, and state that at convergence it yields
+exactly the shortest path. On our network it yields a directed-legal path on
+43.0\% of solves and the optimum on 23.3\%. The results are compatible: their
+examples are complete graphs and small-worlds of mean degree 6--600, assumed
+undirected, where the walk \emph{cannot} dead-end. Our network has mean
+out-degree 2.46 with pervasive one-ways.
+
+\textbf{ACO on traffic networks.} Zhang et al.\ propose orientation
+guidance weighting edges by angular alignment with the
+destination~\cite{zhang2018novel}, evaluated on one 528-node network with
+static travel times against conventional ACO only; our goal-directed
+ablation is related but distinct and we extend rather than contradict it.
+Tuan et al.\ report an improved ACO beating conventional ACO, Dijkstra and a
+genetic algorithm~\cite{tuan2026improved}, but evaluate on METR-LA under
+fluctuating traffic~\cite{li2018diffusion} without measuring recovery after a
+closure.
+
+\textbf{Position.} A systematic pass over the open citation databases,
+including complete forward-citation sweeps of
+both~\cite{zhang2014improved} and~\cite{watanabe2011traffic}, returns no
+study combining the three families on a real road network under
+simulator-generated congestion with closure recovery as a measured outcome;
+no work pairing Physarum with SUMO was found at all. The contribution
+claimed here is the substrate and the measurement, not the three-algorithm
+combination, which~\cite{zhang2014improved} already reported.

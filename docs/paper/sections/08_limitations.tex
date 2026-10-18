@@ -1,0 +1,80 @@
+\section{Threats to Validity and Limitations}
+\label{sec:limitations}
+
+\subsection{Scope of the measurement}
+
+\textbf{One city, one bounding box.} All results are from a single
+$\sim$4$\times$4\,km area. The structural properties we argue are decisive
+--- low out-degree, pervasive one-ways --- are common to dense organically
+grown cities, but we have not demonstrated that the findings transfer, and a
+grid-planned city could behave differently precisely because its out-degree
+is higher and more uniform.
+
+\textbf{Synthetic demand.} Our congestion comes from simulated demand rather
+than calibrated traffic counts. This is the dimension on which the closest
+recent ACO work is stronger: Tuan et al.\ use measured loop-detector
+speeds~\cite{tuan2026improved,li2018diffusion}. We traded measured demand for
+a controlled, repeatable closure protocol over a full directed street
+network, which their dataset does not support; the complementary study is
+worth doing.
+
+\textbf{Absolute times are optimistic.} Because the shared baseline
+re-annotates free-flow speeds from the generated network, mean free-flow
+speed is considerably higher than real Bengaluru conditions. Every quantity
+we report is a ratio or a count for this reason. Absolute seconds in this
+paper should not be read as travel-time predictions.
+
+\textbf{Single-commodity Physarum.} We run one Physarum instance per OD pair
+rather than modelling multi-commodity flow. This matches the model's
+single-source/single-sink formulation and the comparison we wanted, but it
+forgoes the network-formation behaviour that motivates much of the Physarum
+literature~\cite{tero2010rules}.
+
+\subsection{Choices that could have gone otherwise}
+
+\textbf{We did not implement the directed Physarum formulation.} A directed
+variant exists~\cite{zhang2014directed}. We deliberately benchmarked the
+canonical model, since that is what the accuracy claims in the literature
+describe, but our extraction findings should be read as characterising the
+canonical model on a directed network --- an acknowledged limitation of that
+model --- rather than as a statement about what Physarum-style methods can
+achieve in principle.
+
+\textbf{The dead-node memo is lossy.} About 66\% of its prunes refuse a node
+that was still viable for the ant in question, and memo-on paths are a strict
+subset of memo-off paths. It is a deliberate construction heuristic and the
+ACO numbers should be read with it in place.
+
+\textbf{A prefer-walk-on-tie policy was measured but not applied.} Because
+the best cost is a strict minimum over iterations, the walk can tie the
+fallback and still be scored a loss. Preferring the walk on ties would raise
+the free-flow provenance share from about 33\% to roughly 50\% \emph{without
+changing a single reported cost}, and would recover nothing under
+congestion. We left it out because it changes the semantics of the best-cost
+tracker, but it means our model-only shares are mildly conservative under
+free flow.
+
+\textbf{ACO's hyperparameters were tuned; Physarum's largely were not.} The
+comparison is between a tuned ACO and a near-default Physarum, which is a
+real asymmetry. We note in mitigation that Physarum's single seed is
+justified by measurement rather than assumption, and that the extraction
+findings concern a structural failure mode rather than a parameter setting.
+
+\subsection{Statistical caveats}
+
+The design is fully paired, and the pairing is verified rather than assumed:
+pre-disruption walk stretch is byte-identical warm versus cold across 250
+cells, as it must be, since before the closure the two modes are the same
+run. Where we report conditional statistics --- notably the model-only
+median, which exists only where the walk completed --- the denominator
+differs from the unconditional shares, and reading one as the other would
+mislead. Two errors of exactly this kind occurred during the work and were
+corrected; we have stated both in Section~\ref{sec:design} because they are
+easy to repeat.
+
+Finally, the literature search supporting our novelty claim covers the open
+citation databases and complete forward-citation sets for the two most likely
+anchor papers, but not the IEEE Xplore and Scopus native interfaces, Google
+Scholar's full-text index, or venues that index poorly. Two full texts were
+judged from their abstracts. We regard the claim as systematically supported
+for the indexed literature rather than exhaustively verified.

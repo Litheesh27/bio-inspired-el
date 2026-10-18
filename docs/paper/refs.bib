@@ -1,0 +1,263 @@
+% ---------------------------------------------------------------------------
+% bioroute -- references
+%
+% EVERY entry below was verified against Crossref or OpenAlex on 2026-10-18,
+% or read directly from the publisher's full text. Do not add an entry here
+% that has not been checked the same way: a fabricated or mis-attributed
+% reference is the one defect in this paper that cannot be defended.
+%
+% Entries marked "READ IN FULL" were read end to end, not from the abstract.
+% ---------------------------------------------------------------------------
+
+% ---------- Physarum: the biological model ----------
+
+@article{nakagaki2000maze,
+  author  = {Nakagaki, Toshiyuki and Yamada, Hiroyasu and T{\'o}th, {\'A}gota},
+  title   = {Maze-solving by an amoeboid organism},
+  journal = {Nature},
+  volume  = {407},
+  number  = {6803},
+  pages   = {470},
+  year    = {2000},
+  doi     = {10.1038/35035159}
+}
+
+@article{tero2007mathematical,
+  author  = {Tero, Atsushi and Kobayashi, Ryo and Nakagaki, Toshiyuki},
+  title   = {A mathematical model for adaptive transport network in path
+             finding by true slime mold},
+  journal = {Journal of Theoretical Biology},
+  volume  = {244},
+  number  = {4},
+  pages   = {553--564},
+  year    = {2007},
+  doi     = {10.1016/j.jtbi.2006.07.015},
+  note    = {The conductivity-adaptation model implemented in this work.}
+}
+
+@article{tero2010rules,
+  author  = {Tero, Atsushi and Takagi, Seiji and Saigusa, Tetsu and Ito, Kentaro
+             and Bebber, Daniel P. and Fricker, Mark D. and Yumiki, Kenji and
+             Kobayashi, Ryo and Nakagaki, Toshiyuki},
+  title   = {Rules for Biologically Inspired Adaptive Network Design},
+  journal = {Science},
+  volume  = {327},
+  number  = {5964},
+  pages   = {439--442},
+  year    = {2010},
+  doi     = {10.1126/science.1177894}
+}
+
+@article{bonifaci2012physarum,
+  author  = {Bonifaci, Vincenzo and Mehlhorn, Kurt and Varma, Girish},
+  title   = {Physarum can compute shortest paths},
+  journal = {Journal of Theoretical Biology},
+  volume  = {309},
+  pages   = {121--133},
+  year    = {2012},
+  doi     = {10.1016/j.jtbi.2012.06.017},
+  note    = {Convergence proof; stated for undirected graphs.}
+}
+
+% ---------- Physarum: algorithmic variants and the prior three-way comparison ----------
+
+@article{zhang2014improved,
+  author  = {Zhang, Xiaoge and Wang, Qing and Adamatzky, Andrew and
+             Chan, Felix T. S. and Mahadevan, Sankaran and Deng, Yong},
+  title   = {An Improved {Physarum polycephalum} Algorithm for the Shortest
+             Path Problem},
+  journal = {The Scientific World Journal},
+  volume  = {2014},
+  pages   = {487069},
+  year    = {2014},
+  doi     = {10.1155/2014/487069},
+  note    = {READ IN FULL. The prior three-way Physarum/ACO/Dijkstra
+             comparison, on Erdos-Renyi graphs of 15--2000 nodes.}
+}
+
+@article{zhang2014directed,
+  author  = {Zhang, Xiaoge and Zhang, Yajuan and Deng, Yong},
+  title   = {An improved bio-inspired algorithm for the directed shortest
+             path problem},
+  journal = {Bioinspiration \& Biomimetics},
+  volume  = {9},
+  number  = {4},
+  pages   = {046016},
+  year    = {2014},
+  doi     = {10.1088/1748-3182/9/4/046016},
+  note    = {States that the canonical model is designed only for undirected
+             networks. Abstract read; full text paywalled.}
+}
+
+@article{watanabe2011traffic,
+  author  = {Watanabe, Shin and Tero, Atsushi and Takamatsu, Atsuko and
+             Nakagaki, Toshiyuki},
+  title   = {Traffic optimization in railroad networks using an algorithm
+             mimicking an amoeba-like organism, {Physarum} plasmodium},
+  journal = {BioSystems},
+  volume  = {105},
+  number  = {3},
+  pages   = {225--232},
+  year    = {2011},
+  doi     = {10.1016/j.biosystems.2011.05.001},
+  note    = {Physarum on the Tokyo rail network; the closest prior work on a
+             real transport network.}
+}
+
+@article{wang2021transition,
+  author  = {Wang, Yusheng and Gao, Chao and Zhang, Zili},
+  title   = {When does the {Physarum} Solver Distinguish the Shortest Path
+             from other Paths: the Transition Point and its Applications},
+  journal = {arXiv preprint arXiv:2101.02913},
+  year    = {2021},
+  doi     = {10.48550/arXiv.2101.02913},
+  note    = {READ IN FULL. Defines the dominant-path extraction identical to
+             the max-flux walk used here, and claims it yields the shortest
+             path at convergence on undirected graphs.}
+}
+
+@article{awad2022survey,
+  author  = {Awad, Abubakr and Pang, Wei and Lusseau, David and
+             Coghill, George M.},
+  title   = {A survey on {Physarum polycephalum} intelligent foraging
+             behaviour and bio-inspired applications},
+  journal = {Artificial Intelligence Review},
+  volume  = {56},
+  number  = {1},
+  pages   = {1--26},
+  year    = {2022},
+  doi     = {10.1007/s10462-021-10112-1}
+}
+
+% ---------- Ant colony optimization ----------
+
+@article{dorigo1996ant,
+  author  = {Dorigo, Marco and Maniezzo, Vittorio and Colorni, Alberto},
+  title   = {Ant system: optimization by a colony of cooperating agents},
+  journal = {IEEE Transactions on Systems, Man, and Cybernetics, Part B},
+  volume  = {26},
+  number  = {1},
+  pages   = {29--41},
+  year    = {1996},
+  doi     = {10.1109/3477.484436}
+}
+
+@article{stutzle2000maxmin,
+  author  = {St{\"u}tzle, Thomas and Hoos, Holger H.},
+  title   = {{MAX-MIN} Ant System},
+  journal = {Future Generation Computer Systems},
+  volume  = {16},
+  number  = {8},
+  pages   = {889--914},
+  year    = {2000},
+  doi     = {10.1016/S0167-739X(00)00043-1}
+}
+
+@article{zhang2018novel,
+  author  = {Zhang, Shuijian and Liu, Xuejun and Wang, Meizhen},
+  title   = {A Novel Ant Colony Optimization Algorithm for the Shortest-path
+             Problem in Traffic Networks},
+  journal = {Filomat},
+  volume  = {32},
+  number  = {5},
+  pages   = {1619--1628},
+  year    = {2018},
+  doi     = {10.2298/FIL1805619Z},
+  note    = {READ IN FULL. Orientation-guided ACO; evaluated without
+             congestion on a single 528-node network.}
+}
+
+@incollection{tuan2026improved,
+  author    = {Tuan, Nguyen Minh and Meesad, Phayung and Son, Nguyen Hong and
+               Thua, Huynh Trong},
+  title     = {An Improved Ant Colony Optimization for Dynamic Shortest Path
+               Problems in Smart Transportation Systems},
+  booktitle = {Lecture Notes in Networks and Systems},
+  pages     = {147--158},
+  year      = {2026},
+  doi       = {10.1007/978-3-032-26319-3_12},
+  note      = {Abstract read; full text paywalled. Evaluated on METR-LA under
+               fluctuating traffic, not under closures.}
+}
+
+% ---------- Classical shortest path ----------
+
+@article{dijkstra1959note,
+  author  = {Dijkstra, Edsger W.},
+  title   = {A note on two problems in connexion with graphs},
+  journal = {Numerische Mathematik},
+  volume  = {1},
+  number  = {1},
+  pages   = {269--271},
+  year    = {1959},
+  doi     = {10.1007/BF01386390}
+}
+
+@article{hart1968formal,
+  author  = {Hart, Peter E. and Nilsson, Nils J. and Raphael, Bertram},
+  title   = {A Formal Basis for the Heuristic Determination of Minimum Cost
+             Paths},
+  journal = {IEEE Transactions on Systems Science and Cybernetics},
+  volume  = {4},
+  number  = {2},
+  pages   = {100--107},
+  year    = {1968},
+  doi     = {10.1109/TSSC.1968.300136}
+}
+
+% ---------- Tooling and data ----------
+
+@article{boeing2017osmnx,
+  author  = {Boeing, Geoff},
+  title   = {{OSMnx}: New methods for acquiring, constructing, analyzing, and
+             visualizing complex street networks},
+  journal = {Computers, Environment and Urban Systems},
+  volume  = {65},
+  pages   = {126--139},
+  year    = {2017},
+  doi     = {10.1016/j.compenvurbsys.2017.05.004}
+}
+
+@inproceedings{lopez2018microscopic,
+  author    = {Lopez, Pablo Alvarez and Behrisch, Michael and
+               Bieker-Walz, Laura and Erdmann, Jakob and
+               Fl{\"o}tter{\"o}d, Yun-Pang and Hilbrich, Robert and
+               L{\"u}cken, Leonhard and Rummel, Johannes and
+               Wagner, Peter and Wie{\ss}ner, Evamarie},
+  title     = {Microscopic Traffic Simulation using {SUMO}},
+  booktitle = {IEEE Intelligent Transportation Systems Conference (ITSC)},
+  pages     = {2575--2582},
+  year      = {2018},
+  doi       = {10.1109/ITSC.2018.8569938}
+}
+
+@inproceedings{li2018diffusion,
+  author    = {Li, Yaguang and Yu, Rose and Shahabi, Cyrus and Liu, Yan},
+  title     = {Diffusion Convolutional Recurrent Neural Network: Data-Driven
+               Traffic Forecasting},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2018},
+  doi       = {10.48550/arXiv.1707.01926},
+  note      = {Source of the METR-LA dataset.}
+}
+
+@book{bpr1964,
+  author    = {{Bureau of Public Roads}},
+  title     = {Traffic Assignment Manual},
+  publisher = {U.S. Department of Commerce, Urban Planning Division},
+  year      = {1964},
+  note      = {Origin of the BPR volume-delay function.}
+}
+
+% ---------- Statistics ----------
+
+@article{wilcoxon1945individual,
+  author  = {Wilcoxon, Frank},
+  title   = {Individual Comparisons by Ranking Methods},
+  journal = {Biometrics Bulletin},
+  volume  = {1},
+  number  = {6},
+  pages   = {80--83},
+  year    = {1945},
+  doi     = {10.2307/3001968}
+}

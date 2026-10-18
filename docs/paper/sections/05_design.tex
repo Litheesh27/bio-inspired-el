@@ -1,0 +1,114 @@
+\section{Experimental Design}
+\label{sec:design}
+
+\subsection{Disruption scenarios}
+
+Closures are selected \emph{relative to the current optimal path}, since
+removing random distant edges would change nothing. Table~\ref{tab:scenarios}
+lists the seven conditions.
+
+\begin{table}[t]
+\caption{Disruption scenarios. Rejection rate is the share of candidate
+closures discarded for disconnecting the OD pair.}
+\label{tab:scenarios}
+\centering
+\begin{tabular}{llr}
+\toprule
+ID & Closure & Rejection \\
+\midrule
+S0 & None (routing-quality control) & --- \\
+S1 & One random edge on the optimal path & 2.6\% \\
+S2 & Highest-betweenness edge on the path & 1.0\% \\
+S3 & Three simultaneous path edges & 14.5\% \\
+S4 & Five simultaneous path edges & 31.7\% \\
+S5 & Corridor: one named OSM way & 7.4\% \\
+S6 & Intersection: a node and all incident edges & 4.5\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The closure unit is the ordered node pair, and all parallel edges on it close,
+including the reverse direction. S5 closes one chosen way from the seed
+edge's way-ID list rather than their union, since the union would close two
+to four unrelated corridors and make severity depend on how OSMnx happened to
+simplify the geometry. Source and target must remain connected after
+removal; rejected candidates are resampled and \emph{counted}, because the
+rejection rate is itself a measurement. Seeds derive from SHA-256 rather than
+Python's built-in hash, which is randomized per process and would have made
+the sweep irreproducible across parallel workers.
+
+\subsection{Matrix and pairing}
+
+Thirty origin--destination pairs are drawn with a fixed seed, stratified
+10/10/10 by straight-line distance, and verified to have zero overlap with
+the pairs used for hyperparameter tuning or for the ACO exit-criterion
+measurement. The full matrix is 30 OD pairs $\times$ 7 scenarios $\times$ 2
+traffic levels $\times$ \{warm, cold\}, giving 780 cells and
+\textbf{5{,}520 runs} (ACO 3{,}900, Physarum 780, Dijkstra 420, A* 420).
+
+ACO receives five seeds per cell. Physarum receives one, and this is
+\emph{measured rather than assumed}: conductivities initialise from a fixed
+value, and five OD pairs at three initialisation seeds produced costs
+identical to four decimal places. Classical routers run cold only, since a
+one-shot router has no warm mode.
+
+Crucially, all three algorithms within one cell share \emph{one} Dijkstra
+denominator, computed on the same weighted graph, so stretch is comparable
+across algorithms within a cell by construction.
+
+\subsection{Metrics}
+
+Each run emits a flat record with its algorithm, OD pair, scenario, traffic
+level, start mode, seed, config hash and timestamp. The reported quantities
+are:
+
+\begin{itemize}
+\item \texttt{stretch} $= c_{\text{alg}} / c_{\text{Dijkstra}}$ on the same
+  weighted graph; values below 1.0 are a bug and are asserted against.
+\item \texttt{post\_disruption\_stretch}, against Dijkstra recomputed on the
+  \emph{disrupted} graph.
+\item \texttt{recovery\_iterations} and \texttt{recovery\_wallclock}.
+\item \texttt{walk\_best\_stretch} and
+  \texttt{post\_disruption\_walk\_stretch}, the maximum-flux walk's own
+  result, against the same per-cell denominator as the pooled figures so the
+  two are directly comparable within a row.
+\item \texttt{best\_path\_extraction\_method}, recorded at the iteration
+  where the best cost improved.
+\item \texttt{failed}, recorded and reported, never silently dropped.
+\end{itemize}
+
+One planned metric is excluded. \texttt{time\_to\_first\_valid\_path} was
+intended to separate ``finds a valid route quickly'' from ``finds a good one
+slowly'', but it is \textbf{exactly 1.0 on all 5{,}012 disrupted rows, for
+every algorithm, with zero variance}. The cause is structural: ACO's ants
+construct complete paths from the first iteration, and Physarum's extraction
+falls back to Dijkstra, which always returns a path. It discriminates
+nothing here and we exclude it rather than report a degenerate column. A
+meaningful version would have to be redefined --- for example, iterations to
+a first path within $x\%$ of optimal --- which is a different measurement.
+
+\subsection{Statistics}
+
+Distributions of recovery time and iterations are strongly right-skewed and,
+for Physarum under warm start, bimodal. We therefore report \textbf{median
+and interquartile range throughout, never means}, and compare with
+\textbf{paired} tests: the Wilcoxon signed-rank
+test~\cite{wilcoxon1945individual} on identical (OD pair, scenario, traffic
+level, seed) tuples, with exact zero differences dropped as the statistic
+requires. Confidence intervals come from a two-stage clustered bootstrap
+(10{,}000 resamples): OD pairs are resampled first, then seeds within each
+drawn pair, because rows from one OD pair are not independent.
+
+Pre-disruption quality is deduplicated on the initial solve, which is
+identical across all seven scenarios and both start modes; pooling raw rows
+would count one solve up to thirteen times and shrink every interval by
+bookkeeping alone.
+
+Two rules follow from errors we made and corrected during this work, and we
+state them because they generalise. \textbf{Never compare two medians whose
+sample sizes differ without first checking that they cover the same cells}:
+the design is fully paired by construction, so an unpaired comparison is
+always a choice, and in our case it reversed the sign of a reported effect.
+\textbf{Never report a bimodal distribution through a ratio of medians}: an
+earlier version of our warm-start result did so and produced a spurious
+``24$\times$'' speed-up.

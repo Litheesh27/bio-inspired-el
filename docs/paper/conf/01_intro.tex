@@ -1,0 +1,49 @@
+\section{Introduction}
+
+Ant colony optimization (ACO)~\cite{dorigo1996ant,stutzle2000maxmin} and
+Physarum polycephalum conductivity
+models~\cite{nakagaki2000maze,tero2007mathematical} maintain internal state
+--- a pheromone field, a field of tube conductivities --- that is claimed to
+let them adapt to a changed network rather than recompute from scratch. On a
+road network, where closures and congestion change edge costs continuously,
+that is an attractive property.
+
+It is also rarely measured. Evaluations of these methods overwhelmingly use
+synthetic graphs that are undirected and comparatively dense, report accuracy
+on an undisrupted shortest-path problem, and treat the adaptive machinery as
+self-evidently useful. Three gaps follow: the test graphs lack the structure
+that makes real road routing hard (one-way streets, low out-degree,
+cul-de-sacs); congestion is usually absent, so the weights the adaptation
+tracks never move; and recovery after disruption --- the behaviour the
+retained state exists to provide --- is seldom the measured quantity.
+
+We close those gaps for one city. We benchmark Dijkstra and
+A*~\cite{dijkstra1959note,hart1968formal}, a MAX--MIN Ant System, and a
+Tero-style Physarum model on the real road network of central Bengaluru
+under congestion from the SUMO microsimulator~\cite{lopez2018microscopic},
+measuring recovery from seven classes of closure under warm start (retained
+state) and cold start (state reset). Every algorithm sees identical OD
+pairs, closures and traffic, and all quality figures use a Dijkstra optimum
+computed on the same weighted graph.
+
+\textbf{Contribution 1: extraction provenance, not the model, decides what a
+Physarum result means.} The conductivity model emits a field, not a route; a
+separate extraction step produces the path. Instrumenting that step shows
+Physarum's apparent competence is largely its fallback's. Pooled, it matches
+the optimum on 90.0\% of undisrupted pairs, reproducing the literature;
+restricted to its own maximum-flux walk, 23.3\%. The median stretch is
+exactly 1.000 in \emph{every} provenance class, so a pooled number cannot
+distinguish the model from its Dijkstra fallback. On warm recoveries the
+fallback supplies 66.8\% of reported paths.
+
+\textbf{Contribution 2: warm start buys speed and charges quality.} It cuts
+recovery 2.97$\times$ in iterations and 6.87$\times$ in wall-clock, paired
+($n=358$); 48.3\% of warm recoveries converge in exactly one iteration,
+which cold start never does. Per-iteration cost is unchanged, so the saving
+is adaptation rather than cheaper arithmetic. Against this, warm start is
+significantly worse on the reported post-disruption path
+($p=4.3\times10^{-7}$) and completes its own extraction far less often.
+
+We report what the methods lose as well as what they gain: Dijkstra
+recomputes an exact route in one iteration and about 31\,ms, and no method
+here approaches it on wall-clock.

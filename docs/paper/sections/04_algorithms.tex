@@ -1,0 +1,126 @@
+\section{Algorithms}
+\label{sec:algorithms}
+
+All three families implement one \texttt{Router} interface exposing a solve,
+a disruption hook, and --- for the iterative methods --- a single step, plus
+explicit serializable state so that warm start is a deliberate operation
+rather than an accident of object reuse.
+
+\subsection{Classical baselines}
+
+Dijkstra~\cite{dijkstra1959note} on the congested weight provides the
+reference cost for every stretch figure in this paper. A*~\cite{hart1968formal}
+uses a great-circle distance divided by the network's maximum speed as its
+heuristic. This is admissible only while snapshot times are at least the
+baseline graph's free-flow times, which holds for free flow, for BPR, and for
+SUMO on the re-annotated baseline of Section~\ref{sec:network}; we verify
+cost equality against Dijkstra rather than assuming it. Dijkstra recomputation
+is also the baseline recovery mechanism, since a one-shot router has no other
+mode.
+
+\subsection{MAX--MIN Ant System}
+
+We use MMAS~\cite{stutzle2000maxmin} with transition probability
+proportional to $\tau^{\alpha}\eta^{\beta}$ and visibility
+$\eta = 1/t_{uv}$, pheromone bounded to $[\tau_{\min},\tau_{\max}]$, and
+deposition on the iteration-best path.
+
+\textbf{Plain MMAS does not work on this network.} With mean out-degree 2.46
+and many cul-de-sacs, ants walk into dead ends and the ant completion rate
+was \emph{zero}. We therefore construct tours with backtracking: an ant that
+reaches a node with no unvisited successor retreats rather than being
+discarded. We additionally retain a dead-node memo, implemented by not
+clearing the visited mark on backtrack, which raises ant completion from 36\%
+to 80\% at matched settings and roughly halves construction work.
+
+The memo's cost is measured rather than assumed, because deadness is
+context-dependent on an ant's own visited set: auditing 12{,}031 of 585{,}445
+prune events by breadth-first search shows that \textbf{about 66\% of memo
+prunes refuse a node that was still viable} for that ant, and a deterministic
+test confirms that memo-on paths are a strict subset of memo-off paths. We
+document it as a deliberate lossy construction heuristic, not an
+optimization.
+
+\textbf{Goal direction is an ablation, not the default.} A variant replacing
+$\eta$ with $1/(t_{uv} + h(v))$, where $h$ is A*'s heuristic, gives ACO
+information about the target's location that Physarum never receives, which
+would make the three-way comparison unfair. It is also not better: identical
+to the purely local rule under free flow and \emph{worse} under BPR-heavy
+congestion, because $h$ is a free-flow geometric bound that steers ants
+toward geometrically direct routes exactly when those are the congested ones.
+The methodologically fair default is therefore also the better-performing
+one.
+
+\subsection{Physarum conductivity model}
+
+Each edge carries a conductivity $D_e$ and a cost $L_e$ equal to its current
+congested travel time, giving conductance $w_e = D_e / L_e$. Each iteration
+solves a weighted-Laplacian system for pressures $p$ with unit flow injected
+at the source and withdrawn at the sink, grounded at the sink to make the
+otherwise singular system solvable. Fluxes are $Q_e = w_e \Delta p_e$, and
+conductivities adapt as
+\begin{equation}
+D_e \leftarrow D_e + \mathrm{d}t\,\bigl(f(|Q_e|) - D_e\bigr),
+\qquad
+f(Q) = \frac{|Q|^{\mu}}{1 + |Q|^{\mu}} ,
+\end{equation}
+the Tero form~\cite{tero2007mathematical}; the Bonifaci
+rule $D_e \leftarrow |Q_e|$~\cite{bonifaci2012physarum} is available as a
+switch. Convergence is $\max_e |\Delta D_e| < \epsilon$. A path-stability
+criterion was rejected: early in a run $D$ decays in near-lockstep across
+edges, so stability fires on paths that are still wrong.
+
+\textbf{Pressures are solved on an undirected projection, while an extracted
+path must be legal in the directed graph.} This mismatch is the origin of
+most of what we report in Section~\ref{sec:results}: the flux says ``flow
+this way'' and the road says ``not in that direction''.
+
+\subsubsection{Path extraction and its provenance}
+\label{sec:extraction}
+
+The model yields a field, not a route. We extract in three stages and
+\emph{record which one produced the reported path}:
+
+\begin{enumerate}
+\item \textbf{Maximum-flux walk} --- from the source, repeatedly step along
+  the highest-flux admissible outgoing edge, with a visited set, until the
+  target is reached or no admissible successor exists. This is the model's
+  own extraction, and is procedurally identical to the dominant-path
+  construction of~\cite{wang2021transition}.
+\item \textbf{Threshold-subgraph fallback} --- if the walk dead-ends, run a
+  shortest-path search on the subgraph of edges with $D_e > \theta$.
+\item \textbf{Full-graph fallback} --- if that subgraph does not connect the
+  pair, run a shortest-path search on the whole graph. \emph{This is plain
+  Dijkstra}, and a result attributed to it says nothing about Physarum.
+\end{enumerate}
+
+Recording provenance per run is what makes Section~\ref{sec:provenance}
+possible, and we regard it as a methodological contribution in its own right:
+without it, a Physarum stretch of 1.000 is unfalsifiable.
+
+\subsubsection{Warm start and a degeneracy that must be handled}
+
+Under warm start we zero the conductivity of severed edges, drop them from
+the Laplacian, retain all other conductivities, and continue iterating. Cold
+start resets $D$ to its uniform initial value.
+
+Closures remove edges but never nodes, while grounding at the sink grounds
+exactly one connected component. A node stranded by a closure therefore
+produces either an exactly zero Laplacian row or an ungrounded floating
+block, and the sparse solve returns non-finite pressures that propagate into
+every subsequent iteration. The consequence is not a crash but something
+worse: with NaN pressures every flux comparison and every $D > \theta$ test
+is false, so extraction silently falls through to the full-graph fallback and
+\textbf{Physarum reports Dijkstra's own path as its own, with no error
+raised}. On the intersection-closure scenario this produced a mean
+post-disruption stretch of exactly 1.000 --- fabricated perfection on
+precisely the scenario where the model is weakest.
+
+We fix this by restricting the Laplacian to the source's connected component
+in the undirected projection of the surviving graph, with membership derived
+from surviving edges rather than from conductivity magnitudes so that
+sparsity cannot drift as tubes atrophy. We rejected an epsilon floor on $D$,
+which would have given severed roads a nonzero conductance and so invented
+transport capacity across a closed intersection. This is the model, not a
+patch: Physarum cannot flow where it cannot reach, and the pressure field
+there is genuinely undefined.

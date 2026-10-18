@@ -1,0 +1,99 @@
+\section{Network and Congestion Model}
+\label{sec:network}
+
+\subsection{Study area}
+
+We study a $\sim$4$\times$4\,km area of central Bengaluru, India, covering
+MG Road, Cubbon Park, Shivajinagar and Richmond Town. The area was chosen
+for its irregular, organically grown topology, which is structurally unlike
+the grid layouts and synthetic graphs common in this literature. The network
+is obtained from OpenStreetMap via OSMnx~\cite{boeing2017osmnx} as a directed
+multigraph, reduced to its largest strongly connected component so that every
+origin--destination pair is reachable, giving \textbf{2{,}856 nodes and
+7{,}015 directed edges}, with \textbf{mean out-degree 2.46}.
+
+That last figure is the single most important structural property for what
+follows. A node with out-degree two offers a walk-based extraction procedure
+almost no choice, and one-way streets mean that a direction favoured by an
+undirected flow computation may be illegal to traverse. Both conditions are
+absent from the complete and near-complete undirected graphs used in prior
+Physarum evaluations.
+
+\subsection{Congestion as an interface, with two sources}
+
+Algorithms never observe the congestion source directly. A
+\texttt{Congestion\-Provider} returns a \texttt{TrafficSnapshot} mapping each
+edge to a congested travel time, which keeps the choice of source orthogonal
+to the routing code. We implement two providers.
+
+\textbf{SUMO microsimulation (primary).} The same OpenStreetMap extract is
+converted with \texttt{netconvert} and loaded with synthetic demand generated
+by \texttt{randomTrips.py} and \texttt{duarouter} at two levels, light and
+heavy. Per-edge travel times are collected from \texttt{edgeData} output at
+300\,s intervals. We deliberately omit \texttt{--geometry.remove} during
+conversion, because it merges edges and destroys the way-ID traceability the
+join below depends on.
+
+\textbf{BPR volume-delay (secondary).} An analytic volume-delay
+function~\cite{bpr1964} with synthetic origin--destination demand and
+incremental all-or-nothing assignment. It is retained because it is
+independent of the simulator and because, as Section~\ref{sec:results}
+shows, the two sources disagree in a way that is itself a result.
+
+\subsection{Joining SUMO edges to graph edges}
+
+SUMO identifiers derive from OSM way IDs, with sign encoding direction and a
+\texttt{\#n} suffix marking split segments; stripping these recovers the way
+ID and yields a mapping from each graph edge to its matched simulator
+segments. We achieve \textbf{97.53\% ID-based coverage}, so no geometric
+fallback matching was required; unmatched edges retain free-flow times and
+are counted.
+
+One detail here is worth stating because getting it wrong corrupts every
+downstream number silently. \texttt{netconvert} splits ways while OSMnx
+merges them, so the ratio of matched-segment length to graph-edge length has
+median 1.44 and 90th percentile 8.9 on this network. Averaging the matched
+segments' \emph{travel times} therefore answers ``how long to cross one
+matched segment'', not ``how long to cross this graph edge'', and understates
+each edge in proportion to how finely it was split --- which affects busy
+arterials most. Under that rule 1{,}794 of 7{,}015 edges (26\%) implied
+speeds above the fastest limit anywhere in the network, the worst by a factor
+of 266, which silently violates A*'s admissibility. Aggregating in
+\emph{pace} instead,
+\begin{equation}
+t_e \;=\; \ell_e \cdot \frac{\sum_i t_i}{\sum_i \ell_i},
+\end{equation}
+where $\ell_e$ is the graph edge length and $(t_i, \ell_i)$ are the matched
+segments' travel times and lengths, reduces the count of over-maximum edges
+to 1 and restores exact A*--Dijkstra agreement.
+
+\subsection{A single shared free-flow baseline}
+
+Stretch is only meaningful against a denominator on the same weighted graph.
+We therefore re-annotate free-flow speeds from the generated SUMO network, so
+that the congested numerator and the free-flow denominator derive from one
+road model, and stamp the choice of baseline into every snapshot's metadata.
+A consequence must be stated plainly: mean free-flow speed rises from
+22.74 to 51.49\,km/h, so \textbf{absolute travel times on this graph are
+optimistic for Bengaluru}. Ratios --- which is all we report --- are
+comparable; absolute seconds are not realistic.
+
+\subsection{Calibration and what the two sources do and do not agree on}
+
+At heavy demand, teleports (SUMO's escape hatch for gridlocked vehicles,
+which falsify edge travel times) are held to 5.13\%. Per-interval travel
+times are clipped at 20$\times$ free flow; this clip is necessary even in a
+zero-teleport, fully drained run, and the clipped samples' median is
+86--97$\times$ free flow, a cleanly separated tail rather than a threshold
+judgement.
+
+Measured on one denominator, congestion ratios along OD paths are
+1.18$\times$ (light) and 2.53$\times$ (heavy) for BPR, against 1.81$\times$
+and 2.11$\times$ for SUMO. \textbf{The two sources bracket rather than agree,
+and must not be merged into a single notion of ``congestion level''.} SUMO's
+floor is higher because signal delay enters the numerator but not the
+free-flow denominator; BPR's range is wider because synthetic demand loads
+shortest paths, which is exactly where an OD-path measurement walks. The
+heavy-versus-light contrast is modest per edge (1.55$\times$ to
+1.85$\times$): at light demand 24\% of graph edges carry no vehicle at all,
+and 12\% at heavy.

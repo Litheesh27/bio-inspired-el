@@ -1,0 +1,108 @@
+\section{Related Work}
+
+\subsection{Physarum models of shortest path}
+
+The slime mould \emph{Physarum polycephalum} connects food sources through a
+tube network that thickens where flux is high and atrophies where it is
+low, and it famously resolves a maze into the shortest connecting
+path~\cite{nakagaki2000maze}. Tero et al.\ formalised this as a system of
+adapting conductivities driven by a Poiseuille-flow pressure
+solve~\cite{tero2007mathematical}; the same group later used it to produce
+networks comparable to the Tokyo rail system~\cite{tero2010rules}. Bonifaci
+et al.\ proved that the continuous dynamics converge to the shortest path,
+for \emph{undirected} graphs~\cite{bonifaci2012physarum}. We implement the
+canonical Tero model, with the simpler Bonifaci adaptation rule available as
+a configuration switch. Awad et al.\ survey the wider family of
+Physarum-inspired applications~\cite{awad2022survey}.
+
+The directedness restriction is explicit in the literature rather than
+incidental. Zhang et al.\ note that the model is designed only for
+undirected networks and propose a directed formulation based on analog
+circuit analysis~\cite{zhang2014directed}. We do \emph{not} implement that
+variant; the behaviour we report for the canonical model on a directed
+network should therefore be read as a measurement of an acknowledged
+limitation, not as the discovery of a defect.
+
+\subsection{The prior three-way comparison}
+
+The combination of Physarum, ACO and Dijkstra in one study is not new.
+Zhang et al.\ benchmark exactly these three~\cite{zhang2014improved} and
+report that their improved Physarum algorithm and Dijkstra both attain
+optimal paths ``with one hundred percent'', while ACO's accuracy degrades
+with network size. Their evaluation uses Erd\H{o}s--R\'enyi random graphs of
+15 to 2{,}000 nodes with static integer edge lengths; there is no congestion
+model, no disruption and no real road network.
+
+Two aspects of that paper shape ours. First, \emph{it needs no extraction
+machinery}: the path is read directly off the converged flux field, because
+on its test graphs the flux separates cleanly, going to one along the path
+and zero elsewhere. It therefore has nothing to pool, and we cannot claim
+that Physarum evaluations in general conflate extraction provenance. The
+honest contrast is that on random graphs extraction is a formality, whereas
+on a real directed road network it becomes the step that decides the reported
+result. Second, their Fig.~9 places ACO at zero optimal-path accuracy from
+1{,}000 nodes upward. Our ACO, on a larger and considerably harder network,
+attains 43--44\% exact match and 73.3--81.3\% within 10\% of optimal; we
+note this not to claim superiority, since the graph families differ, but to
+establish that the ACO baseline used here is a strong one by the standard of
+the prior art.
+
+\subsection{Extraction and termination}
+
+Closest to our extraction finding is the transition-point analysis of Wang et
+al.~\cite{wang2021transition}, which defines a ``dominant path'' procedure
+--- repeatedly step to the maximum-flux edge, delete the visited node, and
+continue --- that is procedurally identical to the maximum-flux walk we
+implement. They state that when the solver converges, the dominant path is
+exactly the shortest path of the graph. On our network it is not: at the
+conductivity convergence point the walk yields a directed-legal path on
+43.0\% of solves and matches the optimum on 23.3\%.
+
+The two results are compatible, and the reason is the test substrate. Their
+motivating examples are five-node \emph{complete} graphs, and their main
+datasets are complete graphs of 50--5{,}000 nodes and small-world graphs of
+mean degree 6 to 600, with the graph assumed undirected throughout. On a
+complete graph the maximum-flux walk cannot dead-end, because every
+unvisited node remains adjacent; the failure mode we measure is structurally
+unreachable there. Our network has mean out-degree 2.46 and pervasive
+one-way streets. We also adopt their methodological point --- that apparent
+speed-ups of accelerated Physarum variants can stem from an inappropriate
+termination criterion --- and test their termination rule on a substrate they
+did not evaluate.
+
+\subsection{Ant colony optimization on traffic networks}
+
+MMAS~\cite{stutzle2000maxmin} bounds pheromone to $[\tau_{\min},
+\tau_{\max}]$, which is what makes repeated re-adaptation possible; plain Ant
+System stagnates. Among traffic-network applications, Zhang et al.\ propose
+orientation guidance, weighting edges by their angular alignment with the
+destination~\cite{zhang2018novel}. That is related to, but not the same as,
+the goal-directed ablation we evaluate, which folds an A*-style great-circle
+time bound into the visibility term. Their evaluation uses a single 528-node
+network with static arc travel times and compares only against conventional
+ACO, so our result --- that goal direction is neutral under free flow and
+harmful under BPR-heavy congestion --- extends rather than contradicts it.
+
+More recently, Tuan et al.\ report an improved ACO for dynamic shortest-path
+problems that outperforms conventional ACO, Dijkstra and a genetic
+algorithm~\cite{tuan2026improved}. Although road closures appear in its
+motivation, the evaluation uses the METR-LA loop-detector
+dataset~\cite{li2018diffusion} under fluctuating traffic, and does not
+measure recovery following a closure. It is nevertheless the closest work to
+ours in one respect that counts against us: its congestion is measured
+rather than simulated. We return to this in Section~\ref{sec:limitations}.
+
+\subsection{Position of this work}
+
+We verified the above with a systematic pass over the open citation
+databases, including complete forward-citation sweeps of both
+\cite{zhang2014improved} (28 citing works) and \cite{watanabe2011traffic}
+(69 citing works). That search returns no study combining all three
+algorithm families on a real road network under simulator-generated
+congestion with closure recovery as a measured outcome; in particular, no
+work pairing a Physarum model with SUMO was found at all. Related but
+distinct are Physarum/ACO \emph{hybrids}, which fuse the two mechanisms into
+one algorithm rather than comparing them. The contribution claimed here is
+therefore the substrate and the measurement --- a real, directed road
+network, simulator congestion, and recovery --- and not the combination of
+the three algorithms, which \cite{zhang2014improved} already reported.

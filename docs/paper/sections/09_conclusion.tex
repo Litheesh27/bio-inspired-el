@@ -1,0 +1,56 @@
+\section{Conclusion}
+
+We benchmarked classical, ant-colony and Physarum routing on the real
+directed road network of central Bengaluru under microsimulated congestion,
+measuring recovery from seven classes of road closure as well as path
+quality, over 5{,}520 runs in a fully paired design.
+
+The headline claim made for bio-inspired routing --- that retained internal
+state buys recovery without recomputation --- holds, and holds in its
+strongest form: warm start lets Physarum recover in a single iteration on
+48.3\% of closures, which cold start never achieves, at an unchanged
+per-iteration cost. But it is a trade and not a gift. Warm start is
+significantly worse on the reported post-disruption path, and it degrades the
+model's own extraction further, so reporting only the speed-up describes half
+the effect.
+
+The finding we think matters most is methodological. A Physarum model does
+not emit a route; an extraction step does, and on a sparse directed network
+that step decides the answer. Pooled over extraction methods our Physarum
+matches the optimum on 90\% of undisrupted pairs; using only its own
+maximum-flux walk, 23.3\%; and on warm recoveries it returns plain
+Dijkstra's path two-thirds of the time. Because the median stretch is
+exactly 1.000 inside every provenance class, a pooled figure cannot be
+falsified. We argue that provenance should be reported as a matter of course
+for this model class.
+
+We also showed that adaptation improves extraction \emph{quality} while
+reducing its \emph{reliability}, so the two must be measured together; that
+no earlier stopping rule improves on the standard convergence criterion,
+because the quality ceiling is already reached there; and that the sign of
+the congestion effect on ACO belongs to the congestion model rather than to
+the algorithm, which makes unqualified claims about behaviour ``under
+congestion'' underdetermined.
+
+Throughout, Dijkstra remained the honest baseline: an exact route in one
+iteration and roughly 31\,ms, which no method here approached on wall-clock.
+On a network of this size recomputation is the correct engineering choice,
+and the case for adaptive methods must be made on regimes we did not test.
+
+Future work should extend the benchmark across cities with different
+topological character, pair the controlled closure protocol used here with
+measured rather than synthetic demand, and evaluate the directed Physarum
+formulation, whose behaviour on this substrate our results give specific
+reason to want measured.
+
+\section*{Reproducibility}
+
+The complete experimental record --- the 5{,}520-row results file from which
+every number in this paper derives, the network and congestion pipeline, all
+seven figure-generating scripts, the hyperparameter sweeps, and the
+pre-registered measurement protocols for the mechanism experiments --- is
+available in the project repository. Every run carries its seed and a
+configuration hash, and all figures regenerate from the committed results
+file with a single command. Recorded failures are retained rather than
+dropped, and a deliberately failing test marks the ACO exit criterion that
+was missed.
