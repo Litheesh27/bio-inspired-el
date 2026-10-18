@@ -160,6 +160,22 @@ On the cells where both sides produce a path, cold's walk is marginally
 better -- see `docs/results/phase9a_notes.md`. Warm start's robust win is
 SPEED, not extraction quality.
 
+**UPDATE (Phase 9b-stop) -- cold's edge on `post_disruption_walk_stretch`
+is bought at ITERATION 1 and should not be read as a property of cold
+start.** That column is `walk_best_cost()`, a MIN over all iterations.
+Cold recovery's iteration 1 is a reset, near-uniform field, which the walk
+traverses easily but badly: of the 87 cells only cold's walk completes,
+70 (80.5%) first succeed on iteration 1, median stretch 1.3713, with ONE
+exact match. At the FINAL iteration the two modes are indistinguishable
+(completion 0.355 vs 0.360, discordant 7/9, p=0.804; stretch n=120,
+14/21/85, p=0.694), and warm's iteration-1 walk is significantly BETTER
+than cold's (n=105, 1.0617 vs 1.2712, p=1.7e-04).
+
+**The `post_disruption_stretch` row above is a finding in its own right and
+was not reported as one.** Warm start is worse on the REPORTED path too,
+not only on the model's own extraction: cold better on 57 cells, warm on
+11, p=4.34e-07. That is the quality side of the 2.97x/6.87x speed win.
+
 Ties are large on the quality metrics because both start modes frequently
 find the same optimal path; they are dropped from the signed-rank test (as
 the statistic requires) but reported here, since a tie is signal rather
@@ -186,6 +202,21 @@ produced the path actually REPORTED (tracked at the iteration where
 `best_cost` improved), not `extraction_method`, which only says how the
 final iteration happened to end. The two disagree on a large minority of
 rows (Phase 8b).
+
+**CAVEAT (Phase 9b-stop) -- THIS TABLE POOLS ACROSS START MODE, AND THE
+29.5% theta share DOES NOT APPLY TO WARM START.** On the 716 recovery rows
+the split is mode-dependent to the point of being qualitatively different:
+
+| start mode | `max_flux_walk` | `theta_subgraph_fallback` | `full_graph_fallback` (= Dijkstra) |
+|---|---|---|---|
+| cold | 95 | 201 | 62 (17.3%) |
+| warm | 119 | **0** | **239 (66.8%)** |
+
+Roughly 98.8% of warm start's retained tubes sit below `theta`, so its
+thresholded subgraph never connects s-t and the theta fallback NEVER FIRES
+on a warm recovery -- a hard zero across all 358 cells. Warm Physarum
+therefore reports plain Dijkstra's path on two-thirds of recoveries. The
+no-pooling rule applies to start mode as well as to provenance.
 
 
 ## Table 5 -- Per-scenario post-disruption quality and recovery cost

@@ -43,15 +43,26 @@ in exactly one iteration**, which cold start never does — its minimum is 73.
 Warm start helps ACO too, though less dramatically: 1.26× fewer iterations and
 1.56× less wall-clock (n=1,790).
 
-**But warm start is not free, and the cost falls on Physarum's own
-extraction.** A retained conductivity field is tuned to the *old* optimum, so
-after a closure it keeps driving flux down now-severed corridors: the warm
-max-flux walk completes a path on only **36.3%** of recoveries against cold's
-59.5%, and on the 126 cells where both complete, cold's walk is the marginally
-better one (1.013 vs 1.059, p=2.7e-04). Warm start's robust win is speed, not
-path quality. An earlier version of this result compared the two unpaired,
-across samples of different size, and reported the opposite — the mechanism
-above is plausible but untested, and only the measurement is a finding.
+**But warm start is not free, and the price is paid in path quality.** On the
+reported path, paired across all 358 recovery cells, cold start is the better
+one: cold wins on 57 cells, warm on 11, 290 ties, **p=4.3e-07**. The model's own
+extraction suffers too — the warm max-flux walk completes a path on only
+**36.3%** of recoveries against cold's 59.5%. Warm start's robust win is speed,
+and it is a genuine trade rather than a free lunch.
+
+*Why* turned out not to be what we first wrote. The obvious explanation — a
+retained field still driving flux down now-severed corridors — is **refuted**:
+a placebo closure placed eight or more hops away reproduces almost the whole
+deficit and is statistically indistinguishable from a closure sitting directly
+on the route (43.3% vs 41.7%, p=1.00). The closure's location is nearly
+irrelevant. What actually matters is **how converged the field is**: the walk
+works on a near-uniform field and stops working as the field concentrates onto
+a thin corridor. Convergence alone, with no closure anywhere, drops walk
+completion from 69.8% to 43.0%. Cold start's advantage is simply that it rewinds
+the field to the uniform state the walk can still traverse. A further rival
+explanation — that warm start leaves *less* conductivity overall — is not
+merely unsupported but **analytically impossible**: the walk is scale-invariant
+in the conductivity field, so only its shape can matter, never its level.
 
 **Physarum's apparent competence is substantially its fallback's.** The model
 extracts a path by walking the maximum-flux tube; when that walk dead-ends it
@@ -61,6 +72,34 @@ extraction: **23.3%**. Median stretch is exactly 1.000 inside *every*
 provenance class, so a pooled number cannot separate "the model found the
 optimum" from "the fallback returned Dijkstra's answer". Results here are
 therefore always reported as two labelled series and never pooled.
+
+The fallback's share also depends on the start mode in a way a pooled table
+hides. On recovery, warm start's thresholded subgraph never connects origin to
+destination at all — roughly 98.8% of retained tubes sit below the threshold —
+so **warm Physarum reports plain Dijkstra's path on two-thirds of recoveries
+(239 of 358)**, against 17.3% for cold start. The two modes arrive at an answer
+by different routes, and only one of them involves the model.
+
+**The model's adaptation does earn its keep — but it buys quality, not
+reliability.** Against a control that runs the pressure solve with *zero*
+adaptation (a plain electrical flow on the same resistive network), the
+converged field walks to the destination **less** often (43.3% vs 56.7%) and
+yet produces far better routes when it gets there: median stretch **1.006 vs
+1.437**, and an exact match on 46.2% of completed walks against 5.9%. Paired on
+the same solves the unadapted field loses 26-0 (p=8.3e-06). The near-uniform
+field is easy to walk precisely *because* it is uninformative: flux spreads
+over many routes, so almost every node has a successor, and the path strung
+together is 40%+ off optimal. Completion and quality move in opposite
+directions, which is why reporting either one alone misleads.
+
+We also tested whether stopping earlier — at the walk's own best iteration —
+would do better, and it does not. A perfect per-cell oracle buys **zero**
+additional exact matches, because every exact-match walk is already exact at
+convergence; all it adds is 16 completions of mediocre paths (median stretch
+1.248, none optimal), worth +8.3 points of within-10% rate. No fixed stopping
+iteration beats the existing convergence criterion, and the router already
+retains the best walk across all iterations, so there is nothing to gain by
+stopping at all.
 
 **The sign of the congestion effect belongs to the congestion model, not to
 the algorithm.** Under analytic BPR, congestion *helps* ACO. Under SUMO it

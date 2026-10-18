@@ -587,10 +587,12 @@ that file has the detail.
       field that has done no adaptation at all. Phase 8e RESULT 4's "cold's walk
       is marginally better" therefore has a deflating explanation: it is largely
       a win by a field that has not yet run the model.
-      **OPEN, NOT A FINDING:** extraction quality and the convergence criterion
-      are in direct tension — `max|dD| < eps` runs the field to exactly the state
-      the walk handles worst. `walk_best_iteration()` already records where the
-      walk peaked, so testing an earlier stopping rule is cheap. UNTESTED.
+      **OPEN ITEM NOW CLOSED — TESTED, AND THE ANSWER REVERSES THE
+      IMPLICATION. See Phase 9b-stop.** This read: "extraction quality and the
+      convergence criterion are in direct tension — `max|dD| < eps` runs the
+      field to exactly the state the walk handles worst." The tension is REAL
+      but it resolves IN FAVOUR OF THE EXISTING CRITERION: convergence costs
+      completion and BUYS QUALITY, and no stopping rule beats it.
       **UNDERDETERMINED, stated as such:** the data cannot separate "concentration
       of D" from "OD path length". `reference_hops` is the strongest cross-cell
       predictor (28 vs 51, p=8.9e-21) and every field descriptor correlates with
@@ -599,6 +601,105 @@ that file has the detail.
       experiment: fix the OD pair and vary `dt`/`mu` to make more and less
       concentrated fields on the SAME pair.
       RESULT 1 (warm start's 2.97x/6.87x paired speed advantage) is UNTOUCHED.
+- [x] Phase 9b-stop — **DOES PHYSARUM'S ADAPTATION IMPROVE ITS OWN
+      EXTRACTION? YES, DECISIVELY. The negative result I braced for is not what
+      the data says — but the shape of the win is not what 9b-mech implied
+      either.** `scripts/measure_physarum_stopping_rule.py`,
+      `docs/tuning/physarum_stopping_rule.md` (pre-registered),
+      `data/results/physarum_stopping_rule_part{1,2}.jsonl` (60 + 718 records,
+      tracked). CENSUS: 30 OD x 2 levels = 60 undisrupted solves (Part 1);
+      30 OD x 6 scenarios x 2 levels x {warm,cold} = 358 paired cells (Part 2).
+      Parquet cross-check 60/60 and 2148/2148. `physarum.py` untouched
+      (`git diff --stat` empty); the walk is `replay_walk` IMPORTED from the
+      9b-mech script (not re-implemented a third time), asserted against
+      `last_extraction_method()` every iteration. **I re-verified every number
+      below myself from the raw per-iteration series and from the Parquet; all
+      reproduce exactly.**
+      **THE CONTROL IS EXACT BY CONSTRUCTION, NOT BY APPROXIMATION.** `step()`
+      computes `w = D/L`, solves pressures, and extracts BEFORE it assigns
+      `D_new`, so **iteration 1 IS the zero-adaptation uniform field** — an
+      electrical flow on a travel-time-resistive network with none of the Tero
+      dynamics. Confirmed empirically too: `--uniform-check` converges a router,
+      overwrites `_D` with `D_init`, re-solves and walks, and gets a result
+      identical to iteration 1 on 6/6 OD pairs (I ran it myself).
+      **RESULT — COMPLETION AND QUALITY MOVE IN OPPOSITE DIRECTIONS WITH
+      ADAPTATION.** Undisrupted census, n=60:
+        walk completes       uniform 0.567 (34/60)  |  converged 0.433 (26/60)
+        walk stretch median  uniform **1.4367**     |  converged **1.0059**
+        exact | completion   uniform 5.9% (2/34)    |  converged 46.2% (12/26)
+      Paired, uniform LOSES **26-0** to the best adapted iteration (n=34,
+      p=8.3e-06) and **15-3** to the final iteration (n=21, p=0.0156). It
+      reproduces at scale: cold recovery **120-1** (n=176, p=3.2e-21), warm
+      **27-5** (n=82, p=1.0e-03). Holds in every `reference_hops` tercile,
+      largest on long pairs.
+      **MECHANISM: THE NEAR-UNIFORM FIELD IS WALKABLE *BECAUSE* IT IS
+      UNINFORMATIVE** — flux is spread over many routes so nearly every node
+      has a positive-flux successor, and the route strung together is 40%+ off
+      optimal. 9b-mech measured COMPLETION ONLY, which made convergence look
+      like a pure liability. **IT IS NOT.** 9b-mech's headline sentence needs a
+      clause ADDED, not replaced: as the field converges the walk completes
+      LESS OFTEN and produces MUCH BETTER paths when it does.
+      **NO STOPPING RULE IS WORTH PROPOSING, and it is the CEILING that
+      settles it, not a failed search.** No fixed k beats `max|dD| < eps` in any
+      of the three censuses (the best, k=50-60, merely TIES it at 12/60
+      exact-match). **A perfect per-cell oracle buys ZERO additional exact
+      matches** — all 12 exact-match walks in the census are ALREADY exact at
+      the final iteration. What an oracle buys is 16 extra completions of
+      MEDIOCRE paths (median stretch 1.2479, **0 exact**, 5 within 10%), moving
+      within-10% 0.267 -> 0.350 = **+8.3 pp, and that is its entire value**.
+      `walk_best_iteration` is DISPERSED (median 26.5, IQR 12.25-33.5, i.e.
+      0.26 of K), so no fixed rule could capture it anyway. **AND "STOPPING" IS
+      THE WRONG LEVER REGARDLESS: the router already retains
+      `walk_best_path()`/`walk_best_cost()` across all iterations, so the
+      oracle is FREE WITHOUT STOPPING ANYTHING.**
+      **STOPPING EARLY COSTS MORE THAN PREDICTED** — the agent's own
+      pre-registered "nearly free" (theta=0.05 vs D=1.0 makes the early
+      fallback plain Dijkstra) was REFUTED and recorded as such: pooled
+      exact-match 0.467 at k=1 vs 0.883 at convergence (p90 1.6698 vs 1.0062);
+      stopping at each cell's `walk_best_iteration` is strictly worse on 13/42
+      and better on 0 (p=0.0015). **Splits hard by mode — cold strictly worse
+      on 67/213 (p=1.1e-12), warm only 4/130 (p=0.068, nearly free, because
+      warm has already converged) — so every claim about the cost of early
+      stopping MUST NAME THE START MODE.**
+      **THIS RETIRES Phase 8e RESULT 4's "cold's walk is marginally better"
+      rather than merely deflating it.** `post_disruption_walk_stretch` is
+      `walk_best_cost()`, a MIN over all iterations, so cold's edge is bought
+      EARLY and cheaply. **At the FINAL iteration warm and cold are
+      INDISTINGUISHABLE** — completion 0.355 vs 0.360 (discordant 7/9,
+      p=0.804) and stretch n=120 (14/21/85, p=0.694). Cold recovery's
+      iteration 1 IS the uniform control (`apply_disruption(warm=False)` resets
+      D; completion 0.492, stretch 1.3388, matching Part 1's 0.567/1.4367), and
+      warm's iteration-1 walk is significantly BETTER than cold's (paired
+      n=105: 1.0617 vs 1.2712, 61/25/19, p=1.7e-04). The 87 cells only cold's
+      walk completes: **first success on iteration 1 on 70/87 (80.5%), median
+      stretch 1.3713, exactly ONE exact match.** So Q4 is a property of the
+      solve's POSITION ON THE CONVERGENCE TRAJECTORY, not of warm vs cold.
+      **UNPLANNED FINDING 1 — THE THETA FALLBACK IS ALSO A NEAR-UNIFORM-FIELD
+      ARTEFACT, AND PROVENANCE IS MODE-DEPENDENT IN A WAY TABLE 4 HIDES.**
+      Recovery provenance, which I verified directly in the Parquet:
+        cold  walk  95 | theta **201** | full-graph  62  (17.3% Dijkstra)
+        warm  walk 119 | theta **0**   | full-graph **239** (**66.8% Dijkstra**)
+      With ~98.8% of retained tubes below `theta`, warm's theta subgraph never
+      connects s-t, so **warm Physarum reports PLAIN DIJKSTRA on two-thirds of
+      all recoveries**, and `theta_subgraph_fallback` on recovery is ENTIRELY a
+      cold-start phenomenon (a hard ZERO across all 358 warm cells). Phase
+      8b/8c's provenance finding is UNDERSTATED, and the two modes reach the
+      answer by DIFFERENT ROUTES — so Table 4's pooled 29.5% theta share must
+      never be read as applying to warm start.
+      **UNPLANNED FINDING 2 — WARM START ALSO COSTS POOLED QUALITY, AND THIS
+      WAS ALREADY SITTING IN TABLE 3 WITHOUT BEING SURFACED AS A FINDING.**
+      Paired n=358 on `post_disruption_stretch`: warm better on 11, **cold
+      better on 57**, 290 ties, **p=4.3e-07** (mean 1.0669 vs 1.0311; exact
+      282 vs 315). I recomputed it from the Parquet alone — it needs no re-run,
+      and it is the QUALITY SIDE of RESULT 1's speed trade. Phase 8e framed
+      warm start's cost as falling on the model's OWN EXTRACTION; it falls on
+      the REPORTED PATH too.
+      RESULT 1 (2.97x/6.87x) is UNTOUCHED, and no number in
+      `docs/results/summary.md` changes.
+      **STANDING LESSON — 8e's and 9b-mech's errors were the SAME error twice:
+      measuring ONE side of a two-sided trade (unpaired medians without
+      coverage; completion without quality). Before reporting that X hurts Y,
+      measure what X BUYS.**
 
 ## Repo layout
 
