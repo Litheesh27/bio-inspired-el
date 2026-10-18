@@ -68,6 +68,32 @@ until it passes.
 
 \subsection{Warm start buys speed and charges quality}
 
+\begin{table}[t]
+\caption{Recovery cost, scenarios S1--S6. Dijkstra is the honest baseline:
+no method here approaches it on wall-clock.}
+\label{tab:crecovery}
+\centering
+\small
+\begin{tabular}{llrrrr}
+\toprule
+Algorithm & Start & $n$ & Iters & Wall (s) & 1 iter \\
+\midrule
+Dijkstra  & cold & 358 & 1.0 & 0.031 & 100\% \\
+A*        & cold & 358 & 1.0 & 0.027 & 100\% \\
+ACO       & warm & 1790 & 69.0 & 34.07 & 0\% \\
+ACO       & cold & 1790 & 110.0 & 59.80 & 0\% \\
+Physarum  & warm & 358 & 42.0 & 0.235 & \textbf{48.3\%} \\
+Physarum  & cold & 358 & 98.0 & 5.661 & 0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:crecovery} gives the raw cost, and the first thing it shows is
+that \textbf{Dijkstra wins on wall-clock, which we report rather than hide}: a
+recompute on this graph costs about 31\,ms where the bio-inspired methods take
+seconds. The defensible quantities are iterations-to-adapt and
+post-disruption quality.
+
 Paired on identical cells, warm start cuts Physarum's recovery by
 \textbf{2.97$\times$ in iterations} (faster on 350/358,
 $p=3.2\times10^{-59}$) and \textbf{6.87$\times$ in wall-clock} (336/358,
@@ -139,3 +165,25 @@ earlier stopping rule is worth adopting}: a perfect per-cell oracle buys
 \emph{zero} additional exact matches, since every exact-match walk is
 already exact at convergence, and the router already retains the best walk
 across iterations.
+
+\subsection{The congestion model decides the sign of the effect}
+
+On the undisrupted solve, ACO's within-10\% rate is 81.3\% under light SUMO
+demand and 58.0\% under heavy, and paired on the same (OD, seed) cells heavy
+is significantly worse ($p=0.036$; 37 pairs pass only under light against 2
+only under heavy).
+
+This \emph{reverses} what we measure on the analytic BPR provider, where
+congestion improves ACO's outcomes because it flattens the cost surface so
+more routes land within 10\% of optimal. The algorithm, the network and the
+OD pairs are identical; only the congestion source differs. SUMO puts signal
+delay in the numerator but not the free-flow denominator, while BPR loads
+synthetic demand onto shortest paths, which is exactly where an OD-path
+measurement walks.
+
+\textbf{So the sign of the congestion effect is a property of the congestion
+model, not of the algorithm}, and any claim about routing behaviour ``under
+congestion'' that does not name its congestion model is underdetermined. We
+accordingly retract a framing from our own earlier analysis, that the two
+bio-inspired methods fail in opposite directions under congestion, which held
+on BPR and does not survive SUMO, where both degrade.
