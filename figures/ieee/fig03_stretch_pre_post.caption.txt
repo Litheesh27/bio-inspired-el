@@ -1,0 +1,7 @@
+Path quality holds up after a closure -- but Physarum's does so only with its
+fallback  Counts under each pair are n(pre) / n(post). The two Physarum series
+are never pooled: 'with fallback' is the reported `stretch` column, 'model
+only' is the max-flux walk's own result (`walk_best_stretch`), which is null
+-- not zero -- on the runs where the walk never completed a path, so its n is
+smaller by construction. SUMO congestion, sumo_speeds baseline; 28 failed runs
+excluded.

@@ -1,0 +1,8 @@
+Warm start's gain is fewer iterations, not cheaper ones -- and its shape is
+bimodal, not a ratio  (a, b) ECDFs of recovery iterations. (c) Median of the
+per-pair ratio, paired on identical (OD pair, scenario, traffic level, seed)
+-- never a ratio of the two medians, which on Physarum's bimodal warm
+distribution would read as 24x. Physarum's median seconds per iteration is
+0.051 warm vs 0.054 cold, so the entire saving is iteration count. Wilcoxon
+signed-rank, exact zero differences dropped. SUMO congestion, sumo_speeds
+baseline; 28 failed runs excluded.

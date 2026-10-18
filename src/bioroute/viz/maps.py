@@ -303,6 +303,13 @@ FIG5_CAPTION = (
 )
 
 
+def _wrap(text: str, width: int) -> str:
+    """Hard-wrap a panel title, which matplotlib will not do for us."""
+    import textwrap  # noqa: PLC0415
+
+    return "\n".join(textwrap.wrap(" ".join(text.split()), width=width))
+
+
 def _series_key(record) -> str:
     """Which style series a route belongs to.
 
@@ -321,6 +328,17 @@ def _route_label(record, phase: str) -> str:
     hops = getattr(record, f"hops_{phase}")
     method = getattr(record, f"extraction_{phase}")
     key = _series_key(record)
+    if style.is_ieee():
+        # The per-route stretch/hops numbers are duplicated by Table 5 and
+        # by the right panel's title; at 7.16 in the eight-entry legend has
+        # ~1.7 in per entry, so the legend keeps the IDENTITY of each line
+        # and the numbers stay where they are not duplicated. Physarum's
+        # provenance is NOT dropped -- an unlabelled green line is the one
+        # thing this figure must never show (module docstring, rule 1).
+        text = style.label(key)
+        if record.algorithm == "physarum":
+            text += f" — {method}"
+        return text
     # The phase is named explicitly: the legend carries the BEFORE
     # numbers while the right panel's title carries the AFTER ones, and an
     # unlabelled "stretch 1.361" invites the reader to attach it to
@@ -354,7 +372,13 @@ def plot_routes_before_after(
     all_paths.append(bundle.reference_path)
     all_paths.append(bundle.disrupted_reference_path)
 
-    fig, axes = plt.subplots(1, 2, figsize=(11.0, 3.9))
+    # IEEE: FULL WIDTH. A map is the figure type that loses the most to
+    # shrinking -- two 1.7 in panels of a 4x4 km street network would be
+    # unreadable -- so this one is never a single-column candidate.
+    fig, axes = plt.subplots(
+        1, 2,
+        figsize=style.pick((11.0, 3.9), (style.IEEE_PAGE_WIDTH_IN, 2.95)),
+    )
     panels = (
         (axes[0], "before", "before closure", []),
         (axes[1], "after", f"after {bundle.scenario_id} closure", bundle.removed_edges),
@@ -365,9 +389,11 @@ def plot_routes_before_after(
     n_corridors = 0
 
     for ax, phase, title, removed in panels:
-        draw_basemap(ax, G)
+        draw_basemap(ax, G, linewidth=style.pick(0.35, 0.28))
         if removed:
-            n_corridors = draw_removed(ax, G, removed)
+            n_corridors = draw_removed(
+                ax, G, removed, linewidth=style.pick(2.6, 1.9),
+            )
 
         # Draw exact baselines first so the bio-inspired detours sit on top
         # of them where they coincide -- the interesting line should be the
@@ -403,7 +429,10 @@ def plot_routes_before_after(
                 G,
                 path,
                 color=style.color(_series_key(record)),
-                linewidth=2.2 if record.algorithm in style.BIO_ALGOS else 1.8,
+                linewidth=style.pick(
+                    2.2 if record.algorithm in style.BIO_ALGOS else 1.8,
+                    1.6 if record.algorithm in style.BIO_ALGOS else 1.3,
+                ),
                 zorder=4 + style.ALGO_ORDER.index(_series_key(record)),
                 linestyle=(0, (4, 3)) if record.algorithm == "astar" else "-",
                 halo=record.algorithm != "astar",
@@ -417,7 +446,7 @@ def plot_routes_before_after(
         zoom_to(ax, G, all_paths)
         _set_geo_aspect(ax, G)
         _strip_axes(ax)
-        ax.set_title(title, fontsize=10)
+        ax.set_title(title, fontsize=style.pick(10, 8))
 
     # The after-panel stretches differ from the before-panel ones, so they
     # go in the panel title rather than being silently folded into one
@@ -428,16 +457,35 @@ def plot_routes_before_after(
             continue
         after_bits.append(f"{style.label(_series_key(record))} {record.stretch_after:.3f}")
     axes[1].set_title(
-        f"after {bundle.scenario_id} closure "
-        f"({n_corridors} corridors closed, {len(bundle.removed_edges)} directed edges)\n"
-        "post-disruption stretch: " + "; ".join(after_bits),
-        fontsize=9,
+        style.pick(
+            f"after {bundle.scenario_id} closure "
+            f"({n_corridors} corridors closed, "
+            f"{len(bundle.removed_edges)} directed edges)\n"
+            "post-disruption stretch: " + "; ".join(after_bits),
+            # Same content, two shorter lines: the stretches are the
+            # quantitative claim of the panel and stay in full.
+            f"after {bundle.scenario_id}: {n_corridors} corridors, "
+            f"{len(bundle.removed_edges)} directed edges\n"
+            # Wrapped, not truncated: at 7.16 in the single-line version
+            # ran off the figure and lost the last algorithm's number.
+            + _wrap(
+                "post-disruption stretch: " + " · ".join(
+                    b.replace(" (w/ fallback)", " (w/ fb)")
+                     .replace(" (model only)", " (walk)")
+                     .replace(" (MMAS)", "")
+                    for b in after_bits
+                ),
+                width=46,
+            ),
+        ),
+        fontsize=style.pick(9, 7.5),
     )
 
     from matplotlib.lines import Line2D  # noqa: PLC0415
 
     handles.append(
-        Line2D([], [], color=style.REMOVED_EDGE, linewidth=2.6)
+        Line2D([], [], color=style.REMOVED_EDGE,
+               linewidth=style.pick(2.6, 1.9))
     )
     labels.append("closed road")
     handles.append(
@@ -450,31 +498,50 @@ def plot_routes_before_after(
             markeredgecolor="white", linestyle="none",
         )
     )
-    labels.append(f"origin ({bundle.od_source})")
+    labels.append(style.pick(f"origin ({bundle.od_source})", "origin"))
     handles.append(
         Line2D(
             [], [], color=style.NODE_TARGET, marker="*", markersize=11,
             markeredgecolor="white", linestyle="none",
         )
     )
-    labels.append(f"destination ({bundle.od_target})")
-
-    fig.legend(handles, labels, loc="lower center", ncol=3, bbox_to_anchor=(0.5, -0.22))
-    fig.suptitle(
-        f"Re-routing after {bundle.scenario_id} — {bundle.stratum} pair "
-        f"{bundle.od_source}→{bundle.od_target} "
-        f"({bundle.distance_m:.0f} m apart), SUMO "
-        f"{bundle.traffic_level}, "
-        f"{'warm' if bundle.warm_start else 'cold'} start\n"
-        "illustrative re-run — not the sweep's measured results",
-        fontsize=10,
+    labels.append(
+        style.pick(f"destination ({bundle.od_target})", "destination")
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.90))
+
+    fig.legend(
+        handles, labels, loc="lower center",
+        ncol=style.pick(3, 4),
+        bbox_to_anchor=style.pick((0.5, -0.22), (0.5, -0.004)),
+    )
+    if style.is_ieee():
+        fig.text(
+            0.5, 0.995,
+            f"{bundle.stratum} pair, {bundle.distance_m:.0f} m apart, SUMO "
+            f"{bundle.traffic_level}, "
+            f"{'warm' if bundle.warm_start else 'cold'} start — "
+            "illustrative seeded re-run, not the sweep's measured results",
+            ha="center", va="top", fontsize=6.5, color="#6B6B6B",
+        )
+        fig.subplots_adjust(
+            left=0.005, right=0.995, top=0.795, bottom=0.175, wspace=0.02,
+        )
+    else:
+        fig.suptitle(
+            f"Re-routing after {bundle.scenario_id} — {bundle.stratum} pair "
+            f"{bundle.od_source}→{bundle.od_target} "
+            f"({bundle.distance_m:.0f} m apart), SUMO "
+            f"{bundle.traffic_level}, "
+            f"{'warm' if bundle.warm_start else 'cold'} start\n"
+            "illustrative re-run — not the sweep's measured results",
+            fontsize=10,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.90))
 
     out_stem = Path(out_stem)
     out_stem.parent.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    for ext in ("png", "svg"):
+    for ext in style.output_formats():
         path = out_stem.with_suffix(f".{ext}")
         fig.savefig(path)
         written.append(path)
@@ -574,7 +641,17 @@ def plot_congestion_heatmap(
     vmax = max(float(vmax), 1.05)
     cmap = congestion_colormap()
 
-    fig, axes = plt.subplots(1, len(levels), figsize=(5.4 * len(levels), 5.6))
+    # IEEE: FULL WIDTH. 7,015 edges over a 4x4 km area per panel; see
+    # docs/results/ieee_figures_notes.md for the legibility check that
+    # settled this (3.4 in per panel still resolves individual streets at
+    # 0.45 pt line width, which is the smallest line a 600 dpi raster and
+    # a vector PDF both reproduce cleanly).
+    fig, axes = plt.subplots(
+        1, len(levels),
+        figsize=style.pick(
+            (5.4 * len(levels), 5.6), (style.IEEE_PAGE_WIDTH_IN, 3.5),
+        ),
+    )
     if len(levels) == 1:
         axes = [axes]
 
@@ -594,7 +671,8 @@ def plot_congestion_heatmap(
             segments.append(edge_points(G, u, v, k))
             values.append(min(float(ratio), vmax))
         lc = LineCollection(
-            segments, cmap=cmap, linewidths=0.75, zorder=2
+            segments, cmap=cmap, linewidths=style.pick(0.75, 0.45),
+            zorder=2,
         )
         lc.set_array(values)
         lc.set_clim(1.0, vmax)
@@ -619,10 +697,21 @@ def plot_congestion_heatmap(
             + " · ".join(bits[:3])
             + "\n"
             + " · ".join(bits[3:]),
-            fontsize=8,
+            fontsize=style.pick(8, 7),
         )
         _set_geo_aspect(ax, G)
         _strip_axes(ax)
+
+    if style.is_ieee():
+        # BEFORE the colorbar: `fig.colorbar(ax=axes)` steals its space
+        # from the panels' current boxes, so a later subplots_adjust would
+        # be silently overridden. Panels are square (4x4 km on an equal
+        # -distance aspect), so the width left over by the colourbar sets
+        # the panel SIZE and the figure height follows from it; anything
+        # shorter leaves the maps smaller than the column allows.
+        fig.subplots_adjust(
+            left=0.005, right=0.895, top=0.875, bottom=0.01, wspace=0.01,
+        )
 
     cbar = fig.colorbar(
         mappable,
@@ -636,20 +725,34 @@ def plot_congestion_heatmap(
         extendfrac=0.02,
     )
     cbar.set_label(
-        f"congested / free-flow travel time  (x, clipped at {vmax:.1f}x)",
-        fontsize=9,
+        style.pick(
+            f"congested / free-flow travel time  (x, clipped at {vmax:.1f}x)",
+            f"congested / free-flow travel time (clipped at {vmax:.1f}x)",
+        ),
+        fontsize=style.pick(9, 7.5),
     )
+    cbar.ax.tick_params(labelsize=style.pick(8, 7))
 
-    fig.suptitle(
-        "Per-edge congestion, SUMO light vs heavy (shared colour scale)\n"
-        "illustrative snapshot property — not the sweep's measured results",
-        fontsize=10,
-    )
+    if style.is_ieee():
+        fig.text(
+            0.5, 0.995,
+            "shared colour scale across both panels — illustrative "
+            "snapshot property, not the sweep's measured results",
+            ha="center", va="top", fontsize=6.5, color="#6B6B6B",
+        )
+    else:
+        fig.suptitle(
+            "Per-edge congestion, SUMO light vs heavy (shared colour "
+            "scale)\n"
+            "illustrative snapshot property — not the sweep's measured "
+            "results",
+            fontsize=10,
+        )
 
     out_stem = Path(out_stem)
     out_stem.parent.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    for ext in ("png", "svg"):
+    for ext in style.output_formats():
         path = out_stem.with_suffix(f".{ext}")
         fig.savefig(path)
         written.append(path)

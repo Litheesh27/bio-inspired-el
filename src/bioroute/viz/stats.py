@@ -145,7 +145,10 @@ class QualitySeries:
 
     @property
     def label(self) -> str:
-        return style.label(self.key)
+        # compact=False PINS the full label: this one feeds the stats
+        # bundle and summary.md, which are evidence and must read the same
+        # whatever rendering mode a figure script happens to be in.
+        return style.label(self.key, compact=False)
 
 
 QUALITY_SERIES: tuple[QualitySeries, ...] = (
@@ -758,7 +761,7 @@ def recovery_table(
             d_it, d_wa = median_iqr(iters), median_iqr(wall)
             row: dict[str, Any] = {
                 "algorithm": algo,
-                "label": style.label(algo),
+                "label": style.label(algo, compact=False),
                 "start": "warm" if warm else "cold",
                 "n": int(len(grp)),
                 "iters_median": d_it["median"],
@@ -826,7 +829,7 @@ def warm_cold_table(df: pd.DataFrame) -> pd.DataFrame:
             rows.append({
                 "algorithm": algo,
                 "series": series_key,
-                "label": style.label(series_key),
+                "label": style.label(series_key, compact=False),
                 "metric": metric,
                 "is_quality_metric": is_quality,
                 "n_pairs": res["n_pairs"],

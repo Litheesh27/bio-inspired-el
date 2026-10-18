@@ -1,0 +1,10 @@
+The speed-vs-quality trade: warm start buys an order of magnitude in
+iterations, and costs stretch only through Physarum's own extraction  One
+marker per series and start mode at the median, with IQR arms on both axes,
+over a light scatter of the individual S1-S6 recovery runs. Dijkstra and A*
+anchor the bottom-left: exact paths in one iteration and ~30 ms, which is the
+honest baseline the bio-inspired methods are measured against. The model-only
+Physarum series uses `post_disruption_walk_stretch` on the same runs, so its x
+is identical and only its y differs -- the vertical gap between the two
+green/purple markers IS the fallback's contribution. SUMO congestion on the
+sumo_speeds baseline; 28 failed runs excluded.

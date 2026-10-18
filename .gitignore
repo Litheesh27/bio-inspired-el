@@ -23,3 +23,9 @@ cache/
 # Phase 9 derived stats bundle: small, cheap to regenerate, but it is the
 # computed basis for docs/results/summary.md and the dashboard, so track it.
 !data/results/stats_*.json
+
+# IEEE figure drafts. The PDFs are what LaTeX consumes and ARE tracked; the
+# 600 dpi PNG previews and the SVGs regenerate from the same command and
+# would add ~11 MB of binaries that nothing downstream reads.
+figures/ieee/*.png
+figures/ieee/*.svg

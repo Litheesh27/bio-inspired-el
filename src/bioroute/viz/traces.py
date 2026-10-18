@@ -1046,8 +1046,17 @@ def plot_convergence(
         else len(strata_order),
     )
 
+    # IEEE: FULL WIDTH, and all three strata KEPT. At 7.16 in each panel is
+    # ~2.2 in, which a two-curve line chart survives; dropping a stratum
+    # would be the wrong economy, because the finding this figure carries
+    # is "Physarum's with-fallback curve sits at 1.0 from iteration 1 in
+    # TWO OF THREE panels" -- that is a count, and a two-panel version
+    # cannot state it.
     fig, axes = plt.subplots(
-        1, len(order), figsize=(4.0 * len(order), 3.5), sharey=False
+        1, len(order), sharey=False,
+        figsize=style.pick(
+            (4.0 * len(order), 3.5), (style.IEEE_PAGE_WIDTH_IN, 2.75),
+        ),
     )
     if len(order) == 1:
         axes = [axes]
@@ -1073,12 +1082,14 @@ def plot_convergence(
             h = ax.axhline(
                 exact[0].stretch,
                 color=style.color(algorithm),
-                linewidth=1.8,
+                linewidth=style.pick(1.8, 1.3),
                 alpha=0.95,
                 linestyle=(0, (5, 3)) if algorithm == "astar" else "-",
                 zorder=2 if algorithm == "dijkstra" else 6,
             )
-            suffix = " = the optimum, stretch 1.0" if algorithm == "dijkstra" else ""
+            suffix = style.pick(
+                " = the optimum, stretch 1.0", " = optimum 1.0",
+            ) if algorithm == "dijkstra" else ""
             legend_handles.setdefault(
                 f"{style.label(algorithm)} (one-shot){suffix}", h
             )
@@ -1090,14 +1101,15 @@ def plot_convergence(
                 ax,
                 t,
                 color=style.color("aco"),
-                linewidth=0.8,
+                linewidth=style.pick(0.8, 0.6),
                 alpha=0.45,
                 zorder=3,
             )
         if aco:
             xs, ys = _median_curve(aco)
             (h,) = ax.plot(
-                xs, ys, color=style.color("aco"), linewidth=2.2, zorder=5
+                xs, ys, color=style.color("aco"),
+                linewidth=style.pick(2.2, 1.5), zorder=5,
             )
             legend_handles.setdefault(
                 f"{style.label('aco')}: {len(aco)} seeds + median", h
@@ -1115,7 +1127,7 @@ def plot_convergence(
                 ax,
                 t,
                 color=style.color(series_key),
-                linewidth=2.0,
+                linewidth=style.pick(2.0, 1.5),
                 zorder=4,
             )
             # ONE legend entry per series key, never one per extraction
@@ -1125,41 +1137,65 @@ def plot_convergence(
             # one Physarum run per panel means one provenance per panel.
             legend_handles.setdefault(
                 style.label(series_key),
-                plt.Line2D([], [], color=style.color(series_key), linewidth=2.0),
+                plt.Line2D([], [], color=style.color(series_key),
+                           linewidth=style.pick(2.0, 1.5)),
             )
             provenance.append(t.best_path_extraction_method or "unknown")
 
-        title = (
+        # The OD node ids are 10-11 digits each and would be ~1.6 in of
+        # title on a 2.2 in panel; they move to the caption file, which is
+        # where a reader who wants to re-run the cell will look anyway.
+        title = style.pick(
             f"{stratum} — {key[0]}→{key[1]}\n"
-            f"{group[0].reference_cost:.0f} s optimum, {ref_hops} hops"
+            f"{group[0].reference_cost:.0f} s optimum, {ref_hops} hops",
+            f"{stratum}: {ref_hops} hops, "
+            f"{group[0].reference_cost:.0f} s optimum",
         )
         if provenance:
-            title += "\nPhysarum path from: " + "/".join(provenance)
-        ax.set_title(title, fontsize=8)
+            title += style.pick(
+                "\nPhysarum path from: ", "\nPhysarum: ",
+            ) + "/".join(provenance)
+        ax.set_title(title, fontsize=style.pick(8, 7))
         ax.set_xlabel("iteration")
         ax.set_xscale("log")
         ax.margins(x=0.02)
 
-    axes[0].set_ylabel("stretch  (cost / Dijkstra cost)")
+    axes[0].set_ylabel(
+        style.pick("stretch  (cost / Dijkstra cost)", "stretch")
+    )
 
     fig.legend(
         legend_handles.values(),
         legend_handles.keys(),
         loc="lower center",
-        ncol=2,
-        bbox_to_anchor=(0.5, -0.20),
+        ncol=style.pick(2, 3),
+        bbox_to_anchor=style.pick((0.5, -0.20), (0.5, -0.004)),
     )
-    fig.suptitle(
-        "Convergence under SUMO heavy demand (S0, no disruption)\n"
-        "illustrative re-run — not the sweep's measured results",
-        fontsize=10,
-    )
-    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    if style.is_ieee():
+        # The "illustrative" label is a standing honesty requirement for
+        # figures 1, 5 and 6 (they are a seeded re-run, not the sweep's
+        # measured evidence). The suptitle goes, so the label is kept as
+        # one small line rather than deferred to the LaTeX caption alone.
+        fig.text(
+            0.5, 0.985,
+            "illustrative seeded re-run — not the sweep's measured results",
+            ha="center", va="top", fontsize=6.5, color="#6B6B6B",
+        )
+        fig.subplots_adjust(
+            left=0.062, right=0.995, top=0.835, bottom=0.265, wspace=0.17,
+        )
+    else:
+        fig.suptitle(
+            "Convergence under SUMO heavy demand (S0, no disruption)\n"
+            "illustrative re-run — not the sweep's measured results",
+            fontsize=10,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.92))
 
     out_stem = Path(out_stem)
     out_stem.parent.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    for ext in ("png", "svg"):
+    for ext in style.output_formats():
         path = out_stem.with_suffix(f".{ext}")
         fig.savefig(path)
         written.append(path)

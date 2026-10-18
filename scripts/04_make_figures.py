@@ -485,14 +485,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="results Parquet (default: the committed Phase 8 sweep file)",
     )
     parser.add_argument(
-        "--outdir", type=Path, default=ROOT / "figures",
-        help="figure output directory (default: figures/)",
+        "--outdir", type=Path, default=None,
+        help="figure output directory (default: figures/, or figures/ieee "
+             "with --ieee)",
     )
     parser.add_argument(
-        "--format", dest="formats", nargs="+", default=list(
-            figures.DEFAULT_FORMATS
-        ),
-        help="output formats (default: png svg)",
+        "--format", dest="formats", nargs="+", default=None,
+        help="output formats (default: png svg; pdf png svg with --ieee)",
+    )
+    parser.add_argument(
+        "--ieee", action="store_true",
+        help="render the IEEE two-column paper variant into figures/ieee: "
+             "3.5 in / 7.16 in widths at final size, 8 pt type floor, PDF "
+             "for LaTeX. Implies --no-tables, so the stats bundle and "
+             "summary.md -- which are rendering-independent evidence -- are "
+             "left untouched.",
     )
     parser.add_argument(
         "--only", nargs="+", default=None,
@@ -509,6 +516,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="render figures only, skipping summary.md and the JSON bundle",
     )
     args = parser.parse_args(argv)
+    mode = "ieee" if args.ieee else "screen"
+    if args.outdir is None:
+        args.outdir = ROOT / "figures" / "ieee" if args.ieee \
+            else ROOT / "figures"
+    if args.ieee:
+        # The IEEE pass is PURELY a rendering variant. Writing the tables
+        # again would rewrite data/results/stats_<hash>.json and
+        # docs/results/summary.md for no reason, and those two files are
+        # cited; a re-render must not be able to move them.
+        args.no_tables = True
 
     df = stats.load_results(args.parquet)
     print(
@@ -523,8 +540,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     written = figures.make_figures(
-        df, args.outdir, formats=args.formats, only=args.only,
+        df, args.outdir, formats=args.formats, only=args.only, mode=mode,
     )
+    print(f"  mode: {mode}  ->  {args.outdir}")
     for key, paths in written.items():
         print(f"  {key}: " + ", ".join(p.name for p in paths))
 

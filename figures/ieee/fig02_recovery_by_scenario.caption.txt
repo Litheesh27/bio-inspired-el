@@ -1,0 +1,7 @@
+Bio-inspired routers re-adapt in tens of iterations; warm start cuts that to
+one on half of all closures  Box = median and IQR, whiskers 1.5 IQR, dots are
+outliers. S0 (no disruption) is absent by construction: it has no recovery to
+measure, and plotting its nulls as zeros would be a fabricated measurement.
+Dijkstra and A* recompute in exactly 1 iteration, so their boxes collapse to a
+line at y=1. Warm panel omits the classical routers, which have no warm mode.
+28 failed runs (all S4, infeasible closure) excluded.

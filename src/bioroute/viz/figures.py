@@ -75,9 +75,11 @@ def _save(
     fig: plt.Figure,
     outdir: Path,
     stem: str,
-    formats: Sequence[str] = DEFAULT_FORMATS,
+    formats: Sequence[str] | None = DEFAULT_FORMATS,
 ) -> list[Path]:
     """Write `fig` once per requested format and return the paths."""
+    if formats is None:
+        formats = style.output_formats()
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
@@ -143,12 +145,23 @@ def _wrap_scenario(scenario: str, width: int = 12) -> str:
     breaks its descriptive second line, which otherwise collides with its
     neighbours at six ticks per panel.
     """
-    head, _, tail = style.SCENARIO_LABELS[scenario].partition("\n")
+    head, _, tail = style.scenario_label(scenario).partition("\n")
+    if style.is_ieee():
+        # `IEEE_SCENARIO_LABELS` is already one short word per scenario;
+        # re-wrapping it would only add a blank line.
+        return "\n".join([head, tail])
     return "\n".join([head, *textwrap.wrap(tail, width=width)])
 
 
 def _caption(
-    fig: plt.Figure, text: str, y: float, *, width: int = 150,
+    fig: plt.Figure,
+    text: str,
+    y: float,
+    *,
+    width: int = 150,
+    outdir: Path | None = None,
+    stem: str | None = None,
+    title: str | None = None,
 ) -> None:
     """Draw a figure caption with EXPLICIT wrapping and line spacing.
 
@@ -156,11 +169,37 @@ def _caption(
     single-line spacing, so a three-line caption overlaps itself. Wrapping
     here and setting `linespacing` fixes that deterministically instead of
     depending on the renderer's idea of the figure width.
+
+    IN IEEE MODE NOTHING IS DRAWN. A paper's caption is set by LaTeX in the
+    column, below the float, and a second caption baked into the image
+    would duplicate it at 7 pt. The text is written to
+    `<stem>.caption.txt` instead, headed by the figure's own headline
+    claim (its screen suptitle), so the claim the drawn figure drops is
+    still carried -- and is right there to paste into `\\caption{}`.
     """
+    if style.is_ieee():
+        if outdir is not None and stem is not None:
+            _write_caption(Path(outdir), stem, title, text)
+        return
     fig.text(
         0.5, y, textwrap.fill(" ".join(text.split()), width=width),
         ha="center", va="top", fontsize=7, color=MUTED, linespacing=1.55,
     )
+
+
+def _write_caption(
+    outdir: Path, stem: str, title: str | None, text: str,
+) -> Path:
+    """Write the LaTeX-ready caption for one IEEE figure."""
+    outdir.mkdir(parents=True, exist_ok=True)
+    body = " ".join(text.split())
+    head = " ".join(title.split()) if title else ""
+    path = outdir / f"{stem}.caption.txt"
+    parts = [p for p in (head, body) if p]
+    path.write_text(
+        textwrap.fill("  ".join(parts), width=78) + "\n", encoding="utf-8",
+    )
+    return path
 
 
 def _iqr_bars(values: pd.Series) -> tuple[float, np.ndarray] | None:
@@ -206,10 +245,22 @@ def fig02_recovery_by_scenario(
          ("dijkstra", "astar", "aco", "physarum")),
     )
 
+    # IEEE: FULL WIDTH. Two panels x six scenario groups x up to four boxes
+    # is 24 boxes; at 3.5 in that is 0.15 in per box and the scenario ticks
+    # would overlap. At 7.16 in each panel gets 3.4 in, which holds six
+    # two-line ticks at the 8 pt floor once the descriptive second line is
+    # abbreviated (`style.IEEE_SCENARIO_LABELS`).
     fig, axes = plt.subplots(
-        1, 2, figsize=(11.0, 4.4), sharey=True,
-        gridspec_kw={"wspace": 0.08},
+        1, 2, sharey=True,
+        figsize=style.pick((11.0, 4.4), (style.IEEE_PAGE_WIDTH_IN, 3.1)),
+        gridspec_kw={"wspace": style.pick(0.08, 0.05)},
     )
+    if style.is_ieee():
+        # Bottom band holds the x labels and then the legend, in that
+        # order; nothing is placed outside the figure rectangle.
+        fig.subplots_adjust(
+            left=0.082, right=0.995, top=0.935, bottom=0.255,
+        )
     legend_handles: dict[str, Patch] = {}
 
     for ax, (title, warm, algos) in zip(axes, panels):
@@ -232,10 +283,14 @@ def fig02_recovery_by_scenario(
                 Patch(facecolor=colour, edgecolor=colour, alpha=0.75,
                       label=f"{style.label(algo)}  (n={_n(total)})"),
             )
-        ax.set_title(title, color=INK)
+        ax.set_title(
+            style.pick(title, title.split(" (")[0]), color=INK,
+            fontsize=style.pick(10, 8),
+        )
         ax.set_xticks(range(len(scenarios)))
         ax.set_xticklabels(
-            [_wrap_scenario(s) for s in scenarios], fontsize=7,
+            [_wrap_scenario(s) for s in scenarios],
+            fontsize=style.pick(7, 8),
         )
         ax.set_xlim(-0.6, len(scenarios) - 0.4)
         ax.set_yscale("log")
@@ -244,28 +299,44 @@ def fig02_recovery_by_scenario(
     # The empty band in the cold panel is itself the result, so it gets
     # labelled instead of being left for the reader to notice.
     axes[1].annotate(
-        "Nothing is plotted between 1 and ~70 here: cold start's\n"
-        "MINIMUM is 73 iterations. Warm Physarum boxes (left panel)\n"
-        "reach all the way down to 1 because that distribution is\n"
-        "bimodal, not because it is uncertain -- see figure 7.",
-        xy=(0.03, 0.34), xycoords="axes fraction",
-        fontsize=7.5, color=MUTED,
+        style.pick(
+            "Nothing is plotted between 1 and ~70 here: cold start's\n"
+            "MINIMUM is 73 iterations. Warm Physarum boxes (left panel)\n"
+            "reach all the way down to 1 because that distribution is\n"
+            "bimodal, not because it is uncertain -- see figure 7.",
+            # Shortened, not shrunk: the empty band is ~0.9 in tall here
+            # and the four-line version needs 0.55 in of text width it
+            # does not have. The claim it drops (why warm reaches 1) is
+            # the subject of figure 7 and of this figure's caption.
+            "empty below 70: cold start's\nMINIMUM is 73 iterations",
+        ),
+        xy=(0.03, style.pick(0.34, 0.30)), xycoords="axes fraction",
+        fontsize=style.pick(7.5, 7.0), color=MUTED,
     )
-    axes[0].set_ylabel("recovery iterations to adapt (count, log scale)")
+    axes[0].set_ylabel(
+        style.pick(
+            "recovery iterations to adapt (count, log scale)",
+            "recovery iterations (log)",
+        )
+    )
     axes[0].set_yticks([1, 2, 5, 10, 20, 50, 100])
     axes[0].get_yaxis().set_major_formatter(mticker.ScalarFormatter())
 
-    fig.suptitle(
+    headline = (
         "Bio-inspired routers re-adapt in tens of iterations; warm start "
-        "cuts that to one on half of all closures",
-        fontsize=11, color=INK, y=1.02,
+        "cuts that to one on half of all closures"
     )
+    if not style.is_ieee():
+        fig.suptitle(headline, fontsize=11, color=INK, y=1.02)
     fig.legend(
         handles=list(legend_handles.values()),
-        loc="lower center", ncol=4, bbox_to_anchor=(0.5, -0.13),
+        loc="lower center", ncol=4,
+        bbox_to_anchor=style.pick((0.5, -0.13), (0.5, -0.005)),
     )
     _caption(
-        fig, y=-0.19, width=170, text=(
+        fig, y=-0.19, width=170,
+        outdir=outdir, stem="fig02_recovery_by_scenario", title=headline,
+        text=(
         "Box = median and IQR, whiskers 1.5 IQR, dots are outliers. S0 "
         "(no disruption) is absent by construction: it has no recovery to "
         "measure, and plotting its nulls as zeros would be a fabricated "
@@ -301,13 +372,26 @@ def fig03_stretch_pre_post(
     ok = df[~df["failed"].astype(bool)]
     initial = stats.initial_solves(ok)
 
-    fig, ax = plt.subplots(figsize=(9.2, 4.6))
+    # IEEE: SINGLE COLUMN. Five groups of two boxes is the one chart here
+    # that fits 3.5 in -- the x axis carries five categories rather than a
+    # continuous range, and the boxes stay 0.3 of a 1.0 slot wide either
+    # way. Only the tick labels and the reference annotation need
+    # shortening.
+    fig, ax = plt.subplots(
+        figsize=style.pick((9.2, 4.6), (style.IEEE_COL_WIDTH_IN, 2.9)),
+    )
+    if style.is_ieee():
+        fig.subplots_adjust(left=0.155, right=0.985, top=0.98, bottom=0.235)
     ax.axhline(
         1.0, color=REFERENCE, linestyle="--", linewidth=1.0, zorder=0,
     )
     ax.text(
-        -0.60, 1.016, "stretch = 1.000: Dijkstra's optimum, same graph",
-        fontsize=7, color=MUTED, va="bottom",
+        style.pick(-0.60, -0.56), 1.016,
+        style.pick(
+            "stretch = 1.000: Dijkstra's optimum, same graph",
+            "1.000 = Dijkstra's optimum",
+        ),
+        fontsize=style.pick(7, 6.5), color=MUTED, va="bottom",
     )
 
     labels: list[str] = []
@@ -322,33 +406,61 @@ def fig03_stretch_pre_post(
         )
         labels.append(style.label(series.key))
         ax.text(
-            x, 0.962, f"n={_n(n_pre)} / {_n(n_post)}",
-            ha="center", fontsize=7, color=MUTED,
+            x, 0.962,
+            # The counts stay (the model-only series' smaller n IS the
+            # point), but the "n=" prefix goes: at 3.5 in the five labels
+            # would otherwise collide.
+            style.pick(
+                f"n={_n(n_pre)} / {_n(n_post)}", f"{_n(n_pre)}/{_n(n_post)}",
+            ),
+            ha="center", fontsize=style.pick(7, 6.5), color=MUTED,
         )
 
     ax.set_xticks(range(len(labels)))
+    # Five category names inside 3.5 in. Stacked two-line labels collide
+    # ("+ fallback" and "model only" leave 2 pt between them) and the fix
+    # is NOT to shrink them below the 8 pt floor or to abbreviate
+    # "Physarum (model only)" into something that could be mistaken for
+    # the pooled series -- that label is load-bearing (no-pooling rule).
+    # Rotating keeps both names in full at 8 pt.
     ax.set_xticklabels(
-        [lab.replace(" (", "\n(") for lab in labels], fontsize=8,
+        [lab if style.is_ieee() else lab.replace(" (", "\n(")
+         for lab in labels],
+        fontsize=8,
+        rotation=style.pick(0, 22),
+        ha=style.pick("center", "right"),
+        rotation_mode=style.pick(None, "anchor"),
     )
     ax.set_ylim(0.95, 2.45)
-    ax.set_ylabel("stretch  (algorithm cost / Dijkstra cost, dimensionless)")
-    ax.set_xlabel("")
-    ax.set_title(
-        "Path quality holds up after a closure -- but Physarum's does so "
-        "only with its fallback",
-        fontsize=11, color=INK,
+    ax.set_ylabel(
+        style.pick(
+            "stretch  (algorithm cost / Dijkstra cost, dimensionless)",
+            "stretch (cost / Dijkstra cost)",
+        )
     )
+    ax.set_xlabel("")
+    headline = (
+        "Path quality holds up after a closure -- but Physarum's does so "
+        "only with its fallback"
+    )
+    if not style.is_ieee():
+        ax.set_title(headline, fontsize=11, color=INK)
     ax.legend(
         handles=[
             Patch(facecolor=MUTED, edgecolor=MUTED, alpha=0.45,
-                  label="pre-disruption (initial solve)"),
+                  label=style.pick(
+                      "pre-disruption (initial solve)", "pre-disruption")),
             Patch(facecolor=MUTED, edgecolor=MUTED, alpha=0.85, hatch="///",
-                  label="post-disruption (S1-S6 recovery)"),
+                  label=style.pick(
+                      "post-disruption (S1-S6 recovery)",
+                      "post-disruption (S1-S6)")),
         ],
         loc="upper left",
     )
     _caption(
-        fig, y=-0.06, width=150, text=(
+        fig, y=-0.06, width=150,
+        outdir=outdir, stem="fig03_stretch_pre_post", title=headline,
+        text=(
         "Counts under each pair are n(pre) / n(post). The two Physarum "
         "series are never pooled: 'with fallback' is the reported `stretch` "
         "column, 'model only' is the max-flux walk's own result "
@@ -393,21 +505,46 @@ def fig04_pareto_recovery_vs_quality(
     # the legend and caption live INSIDE the figure box, so no dead band
     # opens up between the axes and the legend, and the plot area keeps
     # the rest of the height.
+    # IEEE: FULL WIDTH, and it is the figure that most clearly earns it.
+    # Two log-x panels sharing a y axis, each carrying ten markers with
+    # IQR arms over a scatter; at 3.5 in the two Physarum markers -- whose
+    # VERTICAL GAP is the whole point -- would be ~2 mm apart with their
+    # error bars on top of each other.
     fig, axes = plt.subplots(
-        1, 2, figsize=(11.4, 5.9), sharey=True,
+        1, 2, sharey=True,
+        figsize=style.pick((11.4, 5.9), (style.IEEE_PAGE_WIDTH_IN, 3.15)),
     )
     # bottom leaves room for, in order: the x labels, the legend, and the
     # four-line caption -- each given its own band so none can collide.
+    # In IEEE mode there is no in-figure caption, so the bottom band holds
+    # the x labels and a two-row legend only.
     fig.subplots_adjust(
-        left=0.075, right=0.985, top=0.875, bottom=0.335, wspace=0.07,
+        **style.pick(
+            dict(left=0.075, right=0.985, top=0.875, bottom=0.335,
+                 wspace=0.07),
+            dict(left=0.082, right=0.983, top=0.92, bottom=0.235,
+                 wspace=0.05),
+        )
     )
-    x_specs = (
-        ("recovery_iterations", "recovery iterations to adapt "
-                                "(count, log scale)"),
-        ("recovery_wallclock_s", "recovery wall-clock (seconds, log scale)"),
+    x_specs = style.pick(
+        (
+            ("recovery_iterations", "recovery iterations to adapt "
+                                    "(count, log scale)"),
+            ("recovery_wallclock_s",
+             "recovery wall-clock (seconds, log scale)"),
+        ),
+        (
+            ("recovery_iterations", "recovery iterations (log)"),
+            ("recovery_wallclock_s", "recovery wall-clock, s (log)"),
+        ),
     )
 
-    for ax, (x_col, x_label) in zip(axes, x_specs):
+    # Median marker coordinates, recorded as they are drawn so the IEEE
+    # gap annotation below can point at the ACTUAL markers rather than
+    # recompute them from the frame and risk pointing somewhere else.
+    marker_pts: dict[tuple[int, str, bool], tuple[float, float]] = {}
+
+    for panel, (ax, (x_col, x_label)) in enumerate(zip(axes, x_specs)):
         for series in stats.QUALITY_SERIES:
             colour = style.color(series.key)
             sel = rows[rows["algorithm"] == series.algorithm]
@@ -430,7 +567,10 @@ def fig04_pareto_recovery_vs_quality(
                 # stretch 1.000) and would hide each other, so A* is drawn
                 # smaller on top with a surface ring rather than nudged --
                 # moving a marker would misreport its coordinates.
-                size = 11 if series.key == "dijkstra" else 9
+                size = style.pick(
+                    11 if series.key == "dijkstra" else 9,
+                    7.5 if series.key == "dijkstra" else 6.0,
+                )
                 ring = {"markeredgecolor": "white", "markeredgewidth": 1.2} \
                     if series.key == "astar" and filled else {}
                 ax.errorbar(
@@ -443,57 +583,107 @@ def fig04_pareto_recovery_vs_quality(
                     zorder=3 if series.key != "astar" else 4,
                     **ring,
                 )
+                marker_pts[(panel, series.key, warm)] = (mx[0], my[0])
         ax.set_xscale("log")
         ax.set_xlabel(x_label)
         # Placed in empty space rather than over the bottom-left corner,
         # which is exactly where the classical markers sit.
         ax.annotate(
-            "faster and closer\nto optimal",
-            xy=(0.10, 0.52), xytext=(0.33, 0.80),
+            style.pick("faster and closer\nto optimal", "better"),
+            xy=(0.10, 0.52), xytext=style.pick((0.33, 0.80), (0.30, 0.72)),
             xycoords="axes fraction", textcoords="axes fraction",
-            fontsize=8, color=MUTED, ha="left",
+            fontsize=style.pick(8, 7), color=MUTED, ha="left",
             arrowprops={"arrowstyle": "->", "color": MUTED, "lw": 0.9},
         )
 
     axes[0].set_ylabel(
-        "post-disruption stretch  (cost / Dijkstra cost on the closed graph)"
+        style.pick(
+            "post-disruption stretch  (cost / Dijkstra cost on the closed "
+            "graph)",
+            "post-disruption stretch",
+        )
     )
-    axes[0].set_title("algorithmic cost: iterations", color=INK)
-    axes[1].set_title("engineering cost: wall-clock", color=INK)
+    axes[0].set_title(
+        style.pick("algorithmic cost: iterations", "(a) algorithmic cost"),
+        color=INK,
+    )
+    axes[1].set_title(
+        style.pick("engineering cost: wall-clock", "(b) engineering cost"),
+        color=INK,
+    )
     axes[0].set_ylim(0.97, 1.75)
     # Dijkstra and A* coincide exactly; say so rather than let a reader
     # conclude one of them is missing.
     axes[0].annotate(
-        "Dijkstra and A* coincide here:\n1 iteration, stretch 1.000",
-        xy=(1.0, 1.0), xytext=(1.9, 1.17),
-        fontsize=7.5, color=INK,
+        style.pick(
+            "Dijkstra and A* coincide here:\n1 iteration, stretch 1.000",
+            "Dijkstra = A*:\n1 iter, 1.000",
+        ),
+        xy=(1.0, 1.0), xytext=style.pick((1.9, 1.17), (1.5, 1.14)),
+        fontsize=style.pick(7.5, 7), color=INK,
         arrowprops={"arrowstyle": "->", "color": INK, "lw": 0.9},
     )
+    if style.is_ieee():
+        # THE FIGURE'S POINT, drawn rather than left to the caption: the
+        # vertical distance between Physarum's two markers IS what the
+        # fallback contributes. The screen variant says this in its
+        # in-figure caption, which IEEE mode drops, so the claim is made
+        # as a double-headed arrow between the two warm markers instead.
+        # The COLD pair, not the warm one: the same gap exists on both, but
+        # cold's is 0.20 of stretch against warm's 0.06, so on a 2.1 in
+        # axis the cold arrow is ~14 mm and the warm one ~4 mm.
+        full = marker_pts.get((0, "physarum", False))
+        walk = marker_pts.get((0, "physarum_walk", False))
+        if full and walk:
+            axes[0].annotate(
+                "", xy=walk, xytext=full,
+                arrowprops={"arrowstyle": "<->", "color": INK, "lw": 0.9,
+                            "shrinkA": 3.0, "shrinkB": 3.0},
+            )
+            axes[0].annotate(
+                "the fallback's contribution",
+                xy=(walk[0], walk[1]), xytext=(0, 9),
+                textcoords="offset points",
+                fontsize=6.5, color=INK, ha="center", va="bottom",
+                # The ACO scatter runs through this band; a tight white
+                # patch keeps the label readable without hiding a marker.
+                bbox={"facecolor": "white", "edgecolor": "none",
+                      "alpha": 0.85, "pad": 1.0},
+            )
 
     algo_handles = [
         Line2D([], [], color=style.color(s.key), marker="o", linestyle="none",
-               markersize=8, label=style.label(s.key))
+               markersize=style.pick(8, 6), label=style.label(s.key))
         for s in stats.QUALITY_SERIES
     ]
     start_handles = [
         Line2D([], [], color=INK, marker="o", linestyle="none",
-               markersize=8, label="warm start (retained state)"),
+               markersize=style.pick(8, 6),
+               label="warm start (retained state)"),
         Line2D([], [], color=INK, marker="s", linestyle="none",
-               markersize=8, markerfacecolor="none", markeredgewidth=1.6,
-               label="cold start (rebuilt) -- the only mode Dijkstra/A* have"),
+               markersize=style.pick(8, 6), markerfacecolor="none",
+               markeredgewidth=1.6,
+               label=style.pick(
+                   "cold start (rebuilt) -- the only mode Dijkstra/A* have",
+                   "cold start (rebuilt; the only mode Dijkstra/A* have)")),
     ]
     fig.legend(
         handles=algo_handles + start_handles,
-        loc="lower center", ncol=4, bbox_to_anchor=(0.5, 0.145),
+        loc="lower center", ncol=4,
+        bbox_to_anchor=style.pick((0.5, 0.145), (0.5, 0.0)),
     )
-    fig.suptitle(
+    headline = (
         "The speed-vs-quality trade: warm start buys an order of magnitude "
         "in iterations, and costs stretch only through Physarum's own "
-        "extraction",
-        fontsize=11, color=INK, y=0.98,
+        "extraction"
     )
+    if not style.is_ieee():
+        fig.suptitle(headline, fontsize=11, color=INK, y=0.98)
     _caption(
-        fig, y=0.105, text=(
+        fig, y=0.105,
+        outdir=outdir, stem="fig04_pareto_recovery_vs_quality",
+        title=headline,
+        text=(
         "One marker per series and start mode at the median, with IQR arms "
         "on both axes, over a light scatter of the individual S1-S6 "
         "recovery runs. Dijkstra and A* anchor the bottom-left: exact paths "
@@ -538,10 +728,21 @@ def fig07_warm_vs_cold(
     ok = df[~df["failed"].astype(bool)]
     have = ok[ok["recovery_iterations"].notna()]
 
+    # IEEE: FULL WIDTH. Three panels at 3.5 in would be 1.1 in each, which
+    # cannot carry a log x axis with four decades. At 7.16 in each panel is
+    # ~2.2 in; the ECDFs are two curves apiece and survive that, and panel
+    # (c)'s four horizontal boxes only need their in-box annotations
+    # shortened to the ratio and the n.
     fig, axes = plt.subplots(
-        1, 3, figsize=(13.0, 4.2),
-        gridspec_kw={"width_ratios": [1.0, 1.0, 1.15], "wspace": 0.28},
+        1, 3,
+        figsize=style.pick((13.0, 4.2), (style.IEEE_PAGE_WIDTH_IN, 2.45)),
+        gridspec_kw={
+            "width_ratios": [1.0, 1.0, 1.15],
+            "wspace": style.pick(0.28, 0.33),
+        },
     )
+    if style.is_ieee():
+        fig.subplots_adjust(left=0.072, right=0.982, top=0.905, bottom=0.185)
 
     for ax, algo in zip(axes[:2], ("physarum", "aco")):
         sel = have[have["algorithm"] == algo]
@@ -553,8 +754,12 @@ def fig07_warm_vs_cold(
                 continue
             ax.step(
                 np.concatenate([[x[0]], x]), np.concatenate([[0.0], y]),
-                where="post", color=style.START_COLORS[key], linewidth=2.0,
-                label=f"{style.START_LABELS[key]}  (n={_n(x.size)})",
+                where="post", color=style.START_COLORS[key],
+                linewidth=style.pick(2.0, 1.3),
+                label=style.pick(
+                    f"{style.START_LABELS[key]}  (n={_n(x.size)})",
+                    f"{key} (n={_n(x.size)})",
+                ),
             )
         # The iteration budget is drawn because the ECDF's vertical jump at
         # the right edge is runs that BURNED it rather than converged --
@@ -564,14 +769,31 @@ def fig07_warm_vs_cold(
         ax.axvline(budget, color=REFERENCE, linestyle=":", linewidth=1.0)
         ax.text(
             budget * 0.95, 0.02, f"budget {budget:.0f}",
-            rotation=90, ha="right", va="bottom", fontsize=7, color=MUTED,
+            rotation=90, ha="right", va="bottom",
+            fontsize=style.pick(7, 6.5), color=MUTED,
         )
         ax.set_xscale("log")
         ax.set_xlim(0.85, 380)
         ax.set_ylim(0, 1.02)
-        ax.set_xlabel("recovery iterations (count, log scale)")
-        ax.set_title(f"{style.label(algo)}", color=INK)
-        ax.legend(loc="lower right")
+        ax.set_xlabel(
+            style.pick(
+                "recovery iterations (count, log scale)",
+                "recovery iterations (log)",
+            )
+        )
+        panel = "(a) " if algo == "physarum" else "(b) "
+        ax.set_title(
+            style.pick(style.label(algo), panel + style.label(algo)),
+            color=INK,
+        )
+        # Lower right is where the budget rule and its rotated label sit;
+        # at IEEE width the legend and that label overlap, so the legend
+        # moves to the upper left, which both ECDFs leave empty (neither
+        # curve reaches 0.8 before x=40).
+        ax.legend(
+            loc=style.pick("lower right", "upper left"),
+            fontsize=style.pick(8, 6.5),
+        )
 
     # The spike is the result, so it is annotated rather than left to be
     # inferred from a curve.
@@ -586,19 +808,30 @@ def fig07_warm_vs_cold(
     ).dropna()
     share_1 = float((warm_iters == 1).mean())
     axes[0].annotate(
-        f"{share_1:.1%} of warm recoveries\nconverge in EXACTLY 1 iteration",
-        xy=(1.0, share_1), xytext=(1.6, 0.74),
-        fontsize=8, color=INK,
+        style.pick(
+            f"{share_1:.1%} of warm recoveries\n"
+            f"converge in EXACTLY 1 iteration",
+            f"{share_1:.0%} converge in\nEXACTLY 1 iteration",
+        ),
+        xy=(1.0, share_1), xytext=style.pick((1.6, 0.74), (2.1, 0.54)),
+        fontsize=style.pick(8, 7), color=INK,
         arrowprops={"arrowstyle": "->", "color": INK, "lw": 0.9},
     )
     axes[0].annotate(
-        f"cold start never does:\nits minimum is "
-        f"{int(cold_iters.min())} iterations",
-        xy=(float(cold_iters.min()), 0.0), xytext=(8.0, 0.26),
-        fontsize=8, color=INK,
+        style.pick(
+            f"cold start never does:\nits minimum is "
+            f"{int(cold_iters.min())} iterations",
+            f"cold never does:\nits min is {int(cold_iters.min())}",
+        ),
+        xy=(float(cold_iters.min()), 0.0), xytext=style.pick(
+            (8.0, 0.26), (3.4, 0.22),
+        ),
+        fontsize=style.pick(8, 7), color=INK,
         arrowprops={"arrowstyle": "->", "color": INK, "lw": 0.9},
     )
-    axes[0].set_ylabel("cumulative share of recoveries")
+    axes[0].set_ylabel(
+        style.pick("cumulative share of recoveries", "cumulative share")
+    )
 
     # Panel (c): per-pair ratios.
     ax = axes[2]
@@ -638,10 +871,17 @@ def fig07_warm_vs_cold(
         # the data range lands on a whisker or a flier.
         ax.text(
             0.33, y - 0.34,
-            f"{res['median_paired_ratio']:.2f}x   "
-            f"warm faster {res['n_a_better']}/{res['n_pairs']}, "
-            f"p={res['pvalue']:.1e}",
-            fontsize=7, color=INK, va="center", ha="left",
+            style.pick(
+                f"{res['median_paired_ratio']:.2f}x   "
+                f"warm faster {res['n_a_better']}/{res['n_pairs']}, "
+                f"p={res['pvalue']:.1e}",
+                # The p-values are 1e-59 to 1e-198 and are reported in
+                # Table 3; at 2.2 in the ratio and the win count are what
+                # the panel can carry.
+                f"{res['median_paired_ratio']:.2f}x  "
+                f"(warm faster {res['n_a_better']}/{res['n_pairs']})",
+            ),
+            fontsize=style.pick(7, 6.5), color=INK, va="center", ha="left",
         )
         tick_labels.append(f"{style.label(algo).split(' (')[0]}\n{unit}")
     ax.axvline(1.0, color=REFERENCE, linestyle="--", linewidth=1.0)
@@ -650,22 +890,34 @@ def fig07_warm_vs_cold(
     ax.set_xticks([t for t in (1, 10, 100, 1000) if t <= ratio_max * 2.2])
     ax.get_xaxis().set_major_formatter(mticker.ScalarFormatter())
     ax.set_yticks(range(len(specs)))
-    ax.set_yticklabels(tick_labels, fontsize=8)
+    ax.set_yticklabels(tick_labels, fontsize=style.pick(8, 7))
     # Half a slot of headroom above the first box so its annotation, which
     # sits at y - 0.34, is not clipped by the axes.
     ax.set_ylim(len(specs) - 0.5, -0.75)
     ax.set_xlabel(
-        "per-pair cold / warm ratio (log scale; >1 means warm start won)"
+        style.pick(
+            "per-pair cold / warm ratio (log scale; >1 means warm start won)",
+            "cold/warm ratio (log; >1: warm won)",
+        )
     )
-    ax.set_title("paired delta on identical cells", color=INK)
+    ax.set_title(
+        style.pick(
+            "paired delta on identical cells",
+            "(c) paired delta, identical cells",
+        ),
+        color=INK,
+    )
 
-    fig.suptitle(
+    headline = (
         "Warm start's gain is fewer iterations, not cheaper ones -- and its "
-        "shape is bimodal, not a ratio",
-        fontsize=11, color=INK, y=1.03,
+        "shape is bimodal, not a ratio"
     )
+    if not style.is_ieee():
+        fig.suptitle(headline, fontsize=11, color=INK, y=1.03)
     _caption(
-        fig, y=-0.08, width=185, text=(
+        fig, y=-0.08, width=185,
+        outdir=outdir, stem="fig07_warm_vs_cold", title=headline,
+        text=(
         "(a, b) ECDFs of recovery iterations. (c) Median of the per-pair "
         "ratio, paired on identical (OD pair, scenario, traffic level, "
         "seed) -- never a ratio of the two medians, which on Physarum's "
@@ -697,11 +949,17 @@ def make_figures(
     df: pd.DataFrame,
     outdir: Path | str,
     *,
-    formats: Sequence[str] = DEFAULT_FORMATS,
+    formats: Sequence[str] | None = DEFAULT_FORMATS,
     only: Iterable[str] | None = None,
+    mode: str | None = None,
 ) -> dict[str, list[Path]]:
-    """Render the requested figures, returning {figure id: written paths}."""
-    style.apply_style()
+    """Render the requested figures, returning {figure id: written paths}.
+
+    `mode="ieee"` switches geometry, type sizes, legend placement and
+    output formats to the two-column paper variant (see `style.IEEE_RC`);
+    `formats=None` then follows the mode.
+    """
+    style.apply_style(mode)
     wanted = list(FIGURES) if not only else [k for k in FIGURES if k in set(only)]
     unknown = set(only or ()) - set(FIGURES)
     if unknown:
