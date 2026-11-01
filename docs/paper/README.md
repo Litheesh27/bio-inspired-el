@@ -21,8 +21,11 @@ comment listing what to cut next if it still runs long.
 
 ## Building
 
-**There is no LaTeX toolchain in this repository**, so neither file has been
-compiled. Treat the first build as a debugging pass, not a formality.
+There is no LaTeX toolchain in this repository; builds happen on Overleaf.
+The conference paper (`main.tex`) compiles cleanly there to **6 pages**, and its
+compiled output is committed as `bioroute_conference_paper.pdf`. The journal
+version (`main_journal.tex`) is parked and has not been re-checked since the
+conference fixes; see the note at the end.
 
 ### Overleaf (recommended)
 
@@ -32,10 +35,11 @@ Run the staging script, then upload the resulting zip as a new project:
 .venv/Scripts/python.exe docs/paper/make_overleaf_zip.py
 ```
 
-It copies the two `.tex` roots, `refs.bib`, `sections/`, `conf/`, and the
-seven IEEE figure PDFs into `docs/paper/figures/`, so `\graphicspath` resolves
-without reaching outside the project. On Overleaf the compiler should be pdfLaTeX. `main.tex` (the conference
-paper) is selected automatically.
+It bundles `main.tex`, `refs.bib`, `conf/` and `sections/`, plus the figure
+PDFs the papers use, copied into `docs/paper/figures/` so `\graphicspath`
+resolves without reaching outside the project. Only the conference paper is
+bundled as a root, so Overleaf has exactly one main document to pick; set the
+compiler to pdfLaTeX.
 
 ### Locally
 
@@ -52,7 +56,8 @@ the figures without staging.
 
 ## Figures
 
-Both versions use `fig01_convergence.pdf` and `fig07_warm_vs_cold.pdf`.
+The conference paper uses figures 1, 4 and 7 (convergence, the Pareto trade,
+warm vs cold), all full-width. The journal version uses 1, 2, 3, 4 and 7.
 Regenerate all seven IEEE variants from the committed results file with:
 
 ```
@@ -78,7 +83,8 @@ defended, and this project has deliberately kept its claims checkable.
 
 ## Before submitting
 
-- [ ] Compile both; fix whatever the first pass reports.
+- [x] ~~Compile.~~ The conference paper compiles cleanly at 6 pages; every
+      headline number in it was re-derived from the Parquet (22/22).
 - [x] ~~Add author affiliation and email.~~ All five authors are in both
       versions, ordered as in the team's previous submission. Add a funding
       note to the `\author` block if one is required.
@@ -91,3 +97,11 @@ defended, and this project has deliberately kept its claims checkable.
 - [ ] If institutional access becomes available, read the two paywalled full
       texts (`zhang2014directed`, `tuan2026improved`) and confirm the two
       sentences that cite them.
+
+## The parked journal version
+
+`main_journal.tex` is complete but has not been brought in line with the
+conference fixes. Before using it: give it the `\linebreakand` definition from
+`main.tex` (its current `\and` fallback will not lay the five authors out
+2/2/1), set its full-width figures to `figure*` at `\textwidth`, and compile it
+once to check the page count.
