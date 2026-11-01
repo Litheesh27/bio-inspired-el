@@ -467,7 +467,7 @@ that file has the detail.
 - [x] Phase 9 — Analysis, figures, and results dashboard. COMPLETE.
       All 7 figures regenerate from the Parquet; `docs/results/summary.md` holds
       7 tables with CIs on every number; the dashboard is published at
-      https://claude.ai/artifact/2ZPysszxaGhKW2a5712vbH (private to the owner).
+      https://claude.ai/artifact/2ZPysszxaGhKW2a5712vbH (shared with anyone who has the link).
       **9a** (`viz/stats.py`, `viz/figures.py`, `scripts/04_make_figures.py`):
       figures 2/3/4/7 + stats bundle. Paired Wilcoxon on identical
       (od, scenario, traffic, seed) tuples; two-stage clustered bootstrap

@@ -27,7 +27,7 @@ congestion.
 ## Results
 
 **[Interactive dashboard →](https://claude.ai/artifact/2ZPysszxaGhKW2a5712vbH)**
-(private; source in `web/`)
+(shared with anyone who has the link; source in `web/`, which also runs locally)
 
 Full tables with confidence intervals: **[`docs/results/summary.md`](docs/results/summary.md)**
 
