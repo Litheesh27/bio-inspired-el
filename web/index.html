@@ -48,7 +48,7 @@ p{margin:0 0 12px}
 .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.1em;
   text-transform:uppercase;color:var(--muted)}
 
-header{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:26px}
+header{padding-bottom:18px}
 .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px}
 .chip{font-family:var(--mono);font-size:11.5px;color:var(--muted);
   border:1px solid var(--line);border-radius:999px;padding:3px 10px;
@@ -141,6 +141,56 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
   color:var(--muted);font-size:12.5px}
 .loading{padding:50px 0;text-align:center;color:var(--muted);
   font-family:var(--mono);font-size:13px}
+
+/* Tabs. The bar is sticky so the section switcher stays in reach on the
+   long table tabs; it scrolls sideways at phone width rather than wrapping. */
+.tabs{display:flex;gap:2px;overflow-x:auto;border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:5;background:var(--bg);scrollbar-width:thin;
+  margin-top:-6px}
+.tab{font-family:var(--body);font-size:14px;font-weight:500;color:var(--muted);
+  background:none;border:0;border-bottom:2px solid transparent;padding:11px 14px 10px;
+  cursor:pointer;white-space:nowrap;margin-bottom:-1px}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+.tab:focus-visible{outline:2px solid var(--dijkstra);outline-offset:-3px}
+section[hidden]{display:none}
+section[data-tab]{margin-top:28px}
+.guide{display:grid;gap:10px;margin-top:22px;
+  grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.guide a{display:flex;flex-direction:column;gap:4px;padding:13px 15px;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  color:var(--ink);text-decoration:none;min-width:0}
+.guide a:hover{border-color:var(--line-strong)}
+.guide a:focus-visible{outline:2px solid var(--dijkstra);outline-offset:2px}
+.guide b{font-weight:600;font-size:14px}
+.guide span{color:var(--muted);font-size:13px}
+
+/* "How the paths form": the same rail + map layout as the route explorer,
+   with transport controls and a per-frame readout in the rail. */
+.anim-controls{display:flex;gap:8px;flex-wrap:wrap}
+.btn{font-family:var(--body);font-size:13px;padding:7px 13px;border-radius:7px;
+  border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);
+  cursor:pointer}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:500}
+.btn:focus-visible,input[type="range"]:focus-visible{outline:2px solid var(--dijkstra);
+  outline-offset:2px}
+input[type="range"]{width:100%;accent-color:var(--ink);margin:4px 0 0}
+.timeline{display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:6px;
+  background:var(--surface-2)}
+.timeline span{display:block;height:100%}
+.timeline .t-before{background:var(--line-strong)}
+.timeline .t-after{background:var(--warn)}
+.readout{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;margin:0;
+  font-size:13px}
+.readout dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);padding-top:2px}
+.readout dd{margin:0;font-variant-numeric:tabular-nums;min-width:0}
+.flag{display:inline-block;font-family:var(--mono);font-size:11px;padding:1px 8px;
+  border-radius:999px;border:1px solid;white-space:nowrap}
+.flag.ok{color:var(--good);border-color:var(--good)}
+.flag.warn{color:var(--warn);border-color:var(--warn)}
+.story{font-size:14px;max-width:72ch;margin:2px 2px 12px}
+.story b{font-weight:600}
 </style>
 
 <div class="wrap">
@@ -157,7 +207,8 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
 <div id="app" class="loading">Loading results&hellip;</div>
 
 <template id="tpl">
-<section>
+<nav class="tabs" id="tabs" role="tablist" aria-label="Dashboard sections"></nav>
+<section data-tab="overview" role="tabpanel" aria-labelledby="tab-overview" id="panel-overview">
   <div class="sechead"><h2>What the sweep found</h2></div>
   <div class="tiles" id="tiles"></div>
   <div class="callout">
@@ -167,9 +218,17 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
     milliseconds but how many <em>adaptation iterations</em> a method needs to absorb a
     closure, and what path quality it gives up getting there.</p>
   </div>
+  <div class="guide">
+    <a href="#routes"><b>Route explorer</b><span>Pick a pair and a closure; see the route each method chose, before and after.</span></a>
+    <a href="#formation"><b>How paths form</b><span>Watch Physarum's tubes and ACO's pheromone build a route, iteration by iteration.</span></a>
+    <a href="#quality"><b>Path quality</b><span>How close each method gets to optimal, and why Physarum is reported twice.</span></a>
+    <a href="#recovery"><b>Recovery</b><span>Iterations and seconds to recover after roads close, warm against cold.</span></a>
+    <a href="#figures"><b>Figures</b><span>All seven figures from the paper, with what each one shows.</span></a>
+    <a href="#method"><b>Method &amp; limits</b><span>Every recorded failure, and what the numbers can and cannot claim.</span></a>
+  </div>
 </section>
 
-<section>
+<section data-tab="routes" role="tabpanel" aria-labelledby="tab-routes" id="panel-routes">
   <div class="sechead">
     <h2>Route explorer</h2>
     <span class="chip regen">regenerated geometry</span>
@@ -208,7 +267,59 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
   <div class="scroll" style="margin-top:14px"><table id="celltable"></table></div>
 </section>
 
-<section>
+<section data-tab="formation" role="tabpanel" aria-labelledby="tab-formation" id="panel-formation">
+  <div class="sechead">
+    <h2>How the paths form</h2>
+    <span class="chip regen">regenerated &middot; cross-checked</span>
+  </div>
+  <p class="note">Three cells from the sweep, re-run one iteration at a time under its own
+  config and seeds. For Physarum the map shows conductivity: every road starts as an
+  equal tube, and flux thickens a few while the rest wither. For ACO it shows pheromone.
+  Each frame is what the method actually did on that iteration, including where
+  Physarum's own walk got stuck and which fallback supplied the answer instead.
+  <span id="animcheck"></span></p>
+  <div class="explorer">
+    <div class="rail">
+      <div class="field">
+        <label for="animcell">Case</label>
+        <select id="animcell"></select>
+      </div>
+      <div class="field">
+        <label for="animalgo">Method</label>
+        <div class="seg" id="animalgo" role="group" aria-label="Method">
+          <button type="button" data-algo="physarum" aria-pressed="true">Physarum</button>
+          <button type="button" data-algo="aco" aria-pressed="false">ACO</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="animbranch">After the roads close</label>
+        <div class="seg" id="animbranch" role="group" aria-label="Recovery mode">
+          <button type="button" data-branch="warm" aria-pressed="true">Warm start</button>
+          <button type="button" data-branch="cold" aria-pressed="false">Cold start</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="animscrub">Frame</label>
+        <div class="anim-controls">
+          <button class="btn primary" id="animplay" type="button">Play</button>
+          <button class="btn" id="animrestart" type="button">From iteration 1</button>
+        </div>
+        <input type="range" id="animscrub" min="0" max="0" value="0" step="1">
+        <div class="timeline" id="animtimeline" aria-hidden="true"></div>
+        <div class="sub" id="animtimelabel"></div>
+      </div>
+      <dl class="readout" id="animreadout"></dl>
+    </div>
+    <div class="mapbox">
+      <p class="story" id="animstory">Loading&hellip;</p>
+      <canvas id="animmap" width="1400" height="1000" role="img"
+        aria-label="Map of central Bengaluru showing one routing method's internal field"></canvas>
+      <div class="maplegend" id="animlegend"></div>
+    </div>
+  </div>
+</section>
+
+<section data-tab="figures" role="tabpanel" aria-labelledby="tab-figures" id="panel-figures">
   <div class="sechead"><h2>Figures</h2></div>
   <p class="note">Figures 2, 3, 4 and 7 are computed from the results file.
   Figures 1, 5 and 6 are regenerated under the same config, graph, snapshots and
@@ -279,7 +390,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
   </div>
 </section>
 
-<section>
+<section data-tab="quality" role="tabpanel" aria-labelledby="tab-quality" id="panel-quality">
   <div class="sechead"><h2>Path quality before any closure</h2>
     <span class="chip evidence">measured</span></div>
   <p class="note">Stretch is an algorithm's path cost divided by Dijkstra's on the same
@@ -288,7 +399,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
   <div class="scroll"><table id="qualitytable"></table></div>
 </section>
 
-<section>
+<section data-tab="quality" role="tabpanel" aria-labelledby="tab-quality">
   <div class="sechead"><h2>Why Physarum is reported twice</h2>
     <span class="chip evidence">measured</span></div>
   <p class="note">The model extracts a path by walking the maximum-flux tube. When that
@@ -299,7 +410,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
   <div class="scroll"><table id="provtable"></table></div>
 </section>
 
-<section>
+<section data-tab="recovery" role="tabpanel" aria-labelledby="tab-recovery" id="panel-recovery">
   <div class="sechead"><h2>Recovery after a closure</h2>
     <span class="chip evidence">measured</span></div>
   <p class="note">Warm start keeps the pheromone or conductivity field from before the
@@ -323,7 +434,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
   </div>
 </section>
 
-<section>
+<section data-tab="recovery" role="tabpanel" aria-labelledby="tab-recovery">
   <div class="sechead"><h2>Severity by scenario</h2>
     <span class="chip evidence">measured</span></div>
   <p class="note">Closures are drawn relative to each pair's own optimal path and must
@@ -335,7 +446,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
   <div class="scroll"><table id="scntable"></table></div>
 </section>
 
-<section>
+<section data-tab="quality" role="tabpanel" aria-labelledby="tab-quality">
   <div class="sechead"><h2>Does congestion help or hurt?</h2>
     <span class="chip evidence">measured</span></div>
   <p class="note">Paired on the same OD pair and seed, light against heavy.
@@ -347,7 +458,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
   <div class="scroll"><table id="congtable"></table></div>
 </section>
 
-<section>
+<section data-tab="method" role="tabpanel" aria-labelledby="tab-method" id="panel-method">
   <div class="sechead"><h2>Every recorded failure</h2>
     <span class="chip evidence">measured</span></div>
   <p class="note">Failures are recorded, never dropped. All of them share one
@@ -360,7 +471,7 @@ footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
   <div class="scroll"><table id="failtable"></table></div>
 </section>
 
-<section>
+<section data-tab="method" role="tabpanel" aria-labelledby="tab-method">
   <div class="sechead"><h2>Method and limits</h2></div>
   <p class="note" id="methods"></p>
 </section>
@@ -618,6 +729,480 @@ function renderCell() {
   legend(cell);
 }
 
+// ---------------------------------------------------------------------------
+// How the paths form: per-iteration field animation, from data/anim/*.json
+// (scripts/07_export_animation.py). Every run is cross-checked against the
+// results file before export, so these frames are the sweep's own runs.
+// ---------------------------------------------------------------------------
+const ANIM = {
+  idx: null, cells: {}, cell: null, meta: null, algo: "physarum", branch: "warm",
+  frames: [], split: 0, t: 0, timer: null, geo: {}
+};
+const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const METHOD_LABEL = {
+  max_flux_walk: "the model's own walk",
+  theta_subgraph_fallback: "fallback: shortest path over the thick tubes",
+  full_graph_fallback: "fallback: Dijkstra on the full graph"
+};
+
+function b64bytes(s) {
+  const bin = atob(s), u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
+
+// Fields arrive quantised to 0..255, dense or sparse (uint16 index + uint8
+// value), whichever was smaller for that frame. Decoded once, then cached.
+function fieldOf(fr, n) {
+  const f = fr.field;
+  if (f._v) return f._v;
+  let v;
+  if (f.s === 0) v = b64bytes(f.d);
+  else {
+    v = new Uint8Array(n);
+    const ii = new Uint16Array(b64bytes(f.i).buffer), vv = b64bytes(f.v);
+    for (let k = 0; k < ii.length; k++) v[ii[k]] = vv[k];
+  }
+  f._v = v;
+  return v;
+}
+
+// Projected geometry for every field edge, resolved once per method. Physarum
+// keys are undirected tubes "a|b", so either direction's street geometry will do.
+// The map is zoomed to the case: every node any route, walk or ant touches,
+// plus the closure, with room around it for the field. A short pair otherwise
+// occupies a couple of percent of a 4 x 4 km canvas.
+function animBounds(cell) {
+  if (cell._bounds) return cell._bounds;
+  const net = B.network, ids = new Set();
+  const add = p => { if (p) for (const n of p) ids.add(String(n)); };
+  add(cell.reference_path);
+  add(cell.disrupted_reference_path);
+  cell.removed_edges.forEach(e => { ids.add(String(e[0])); ids.add(String(e[1])); });
+  for (const algo of ["physarum", "aco"]) {
+    for (const ph of ["initial", "warm", "cold"]) {
+      for (const f of cell.runs[algo][ph].frames) { add(f.best); add(f.walk); add(f.ant); }
+    }
+  }
+  let w = Infinity, e = -Infinity, so = Infinity, no = -Infinity;
+  ids.forEach(id => {
+    const p = net.nodes[id];
+    if (!p) return;
+    w = Math.min(w, p[0]); e = Math.max(e, p[0]);
+    so = Math.min(so, p[1]); no = Math.max(no, p[1]);
+  });
+  const nb = net.bounds;
+  const hw = Math.max((e - w) * 0.75, (nb.east - nb.west) * 0.19);
+  const hh = Math.max((no - so) * 0.75, (nb.north - nb.south) * 0.19);
+  const cx = (w + e) / 2, cy = (so + no) / 2;
+  cell._bounds = { west: cx - hw, east: cx + hw, south: cy - hh, north: cy + hh };
+  return cell._bounds;
+}
+
+function animProject(cv) {
+  return project({ bounds: animBounds(ANIM.cell) }, cv.width, cv.height, 16);
+}
+
+function animGeom(algo, pr) {
+  const gk = algo + "|" + ANIM.cell.key;
+  if (ANIM.geo[gk]) return ANIM.geo[gk];
+  const net = B.network, keys = ANIM.idx.edges[algo], out = new Array(keys.length);
+  edgePts(net, keys[0].split("|")[0], keys[0].split("|")[1]);
+  for (let i = 0; i < keys.length; i++) {
+    const p = keys[i].split("|");
+    let pts = algo === "aco" ? net.edges[keys[i]] : null;
+    if (!pts) pts = EDGEIDX.get(p[0] + "|" + p[1]) || EDGEIDX.get(p[1] + "|" + p[0])
+      || edgePts(net, p[0], p[1]);
+    out[i] = pts ? pts.map(pr) : null;
+  }
+  ANIM.geo[gk] = out;
+  return out;
+}
+
+function tracePath(ctx, pr, path) {
+  const net = B.network;
+  let started = false;
+  for (let i = 0; i < path.length - 1; i++) {
+    const pts = edgePts(net, path[i], path[i + 1]);
+    if (!pts) continue;
+    if (!started) { stroke(ctx, pr, pts); started = true; }
+    else for (let j = 0; j < pts.length; j++) {
+      const p = pr(pts[j]);
+      ctx.lineTo(p[0], p[1]);
+    }
+  }
+  return started;
+}
+
+// A route drawn over the field, with a halo in the page colour so it stays
+// legible on top of thick tubes.
+function drawRoute(ctx, pr, path, color, width, dash) {
+  if (!path || path.length < 2) return;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  if (!tracePath(ctx, pr, path)) return;
+  ctx.strokeStyle = cssvar("--bg");
+  ctx.lineWidth = width + 3.5;
+  ctx.stroke();
+  ctx.beginPath();
+  tracePath(ctx, pr, path);
+  ctx.setLineDash(dash || []);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawEnds(ctx, pr, sId, tId) {
+  const net = B.network, s = net.nodes[String(sId)], t = net.nodes[String(tId)];
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = cssvar("--bg");
+  ctx.fillStyle = cssvar("--ink");
+  if (s) {
+    const p = pr(s);
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  if (t) {
+    const p = pr(t);
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 5, r = (i % 2) ? 5 : 12;
+      const x = p[0] + r * Math.cos(a), y = p[1] + r * Math.sin(a);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+function drawAnim() {
+  const cv = document.getElementById("animmap");
+  if (!cv || !ANIM.cell || !ANIM.frames.length) return;
+  const net = B.network, ctx = cv.getContext("2d");
+  const pr = animProject(cv);
+  const fr = ANIM.frames[ANIM.t], after = fr.phase !== "initial";
+  const phys = ANIM.algo === "physarum";
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // 1. street network, with closed roads removed after the closure
+  const removed = new Set(ANIM.cell.removed_edges.map(e => e[0] + "|" + e[1]));
+  ctx.beginPath();
+  for (const k of Object.keys(net.edges)) {
+    if (after && removed.has(k.slice(0, k.lastIndexOf("|")))) continue;
+    stroke(ctx, pr, net.edges[k]);
+  }
+  ctx.strokeStyle = cssvar("--line");
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // 2. the method's own field, bucketed so each band is one stroke call
+  const geo = animGeom(ANIM.algo, pr);
+  const vals = fieldOf(fr, geo.length);
+  const NB = 8, buckets = Array.from({ length: NB }, () => []);
+  for (let i = 0; i < vals.length; i++) {
+    if (vals[i] < 6 || !geo[i]) continue;
+    buckets[Math.min(NB - 1, Math.floor(vals[i] / 256 * NB))].push(i);
+  }
+  ctx.strokeStyle = cssvar(phys ? "--physarum" : "--aco");
+  for (let b = 0; b < NB; b++) {
+    if (!buckets[b].length) continue;
+    const t = (b + 0.5) / NB;
+    ctx.beginPath();
+    for (const i of buckets[b]) {
+      const g = geo[i];
+      ctx.moveTo(g[0][0], g[0][1]);
+      for (let j = 1; j < g.length; j++) ctx.lineTo(g[j][0], g[j][1]);
+    }
+    ctx.globalAlpha = 0.07 + 0.58 * t;
+    ctx.lineWidth = 0.5 + 3.6 * t;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // 3. closed roads
+  if (after) {
+    ctx.beginPath();
+    for (const k of Object.keys(net.edges)) {
+      if (removed.has(k.slice(0, k.lastIndexOf("|")))) stroke(ctx, pr, net.edges[k]);
+    }
+    ctx.strokeStyle = cssvar("--closed");
+    ctx.lineWidth = 5.5;
+    ctx.stroke();
+  }
+
+  // 4. Dijkstra's optimum on the graph as it stands at this frame
+  drawRoute(ctx, pr, after ? ANIM.cell.disrupted_reference_path : ANIM.cell.reference_path,
+    cssvar("--dijkstra"), 2.2, [9, 7]);
+
+  // 5. the method's answer so far, then what it did on this iteration
+  if (phys) {
+    const own = fr.best_method === "max_flux_walk";
+    drawRoute(ctx, pr, fr.best, cssvar(own ? "--physarum-walk" : "--physarum"), 6.5);
+    drawRoute(ctx, pr, fr.walk, cssvar("--physarum-walk"), 2.4);
+    if (!fr.reached && fr.walk && fr.walk.length) {
+      const n = net.nodes[String(fr.walk[fr.walk.length - 1])];
+      if (n) {
+        const p = pr(n), r = 9;
+        ctx.strokeStyle = cssvar("--bg");
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.moveTo(p[0] - r, p[1] - r); ctx.lineTo(p[0] + r, p[1] + r);
+        ctx.moveTo(p[0] + r, p[1] - r); ctx.lineTo(p[0] - r, p[1] + r);
+        ctx.stroke();
+        ctx.strokeStyle = cssvar("--warn");
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+      }
+    }
+  } else {
+    drawRoute(ctx, pr, fr.best, cssvar("--aco"), 6.5);
+    drawRoute(ctx, pr, fr.ant, cssvar("--ink"), 2, [3, 5]);
+  }
+  drawEnds(ctx, pr, ANIM.cell.od_source, ANIM.cell.od_target);
+}
+
+function animReadout() {
+  const fr = ANIM.frames[ANIM.t], phys = ANIM.algo === "physarum";
+  const phase = fr.phase === "initial" ? "Before the closure"
+    : "After the closure, " + (fr.phase === "warm" ? "warm start" : "cold start");
+  const rows = [
+    ["Phase", phase],
+    ["Iteration", INT(fr.i) + " of " + INT(fr.n)],
+    ["Best so far", fr.stretch == null ? "no route yet" : "stretch " + F(fr.stretch)]
+  ];
+  let said;
+  if (phys) {
+    const hops = fr.walk ? fr.walk.length - 1 : 0;
+    rows.push(["Own walk", (fr.reached
+      ? '<span class="flag ok">reached</span> '
+      : '<span class="flag warn">dead-ended</span> ') + INT(hops) + " hops"]);
+    rows.push(["This answer", METHOD_LABEL[fr.method] || "none"]);
+    const bm = fr.best_method;
+    rows.push(["Reported route", !bm ? "none yet" : bm === "max_flux_walk"
+      ? '<span class="flag ok">own walk</span>'
+      : '<span class="flag warn">' + (bm === "full_graph_fallback"
+        ? "Dijkstra fallback" : "tube fallback") + "</span>"]);
+    said = (fr.reached ? "own walk reached the destination" : "own walk dead-ended")
+      + "; reported route from " + (METHOD_LABEL[bm] || "nothing yet");
+  } else {
+    rows.push(["Drawn", "pheromone, the best route so far, and this iteration's best ant"]);
+    said = "best route so far " + (fr.stretch == null ? "none" : "at stretch " + F(fr.stretch));
+  }
+  const dl = document.getElementById("animreadout");
+  dl.innerHTML = "";
+  rows.forEach(r => { dl.appendChild(el("dt", null, r[0])); dl.appendChild(el("dd", null, r[1])); });
+  document.getElementById("animmap").setAttribute("aria-label",
+    (phys ? "Physarum" : "ACO") + ", " + phase.toLowerCase() + ", iteration " + fr.i
+    + " of " + fr.n + ": " + said + ".");
+}
+
+function animLegend() {
+  const n = document.getElementById("animlegend");
+  const dashed = c => "repeating-linear-gradient(90deg," + c + " 0 5px,transparent 5px 9px)";
+  const items = ANIM.algo === "physarum" ? [
+    [cssvar("--physarum"), "conductivity, log scale over 3 decades"],
+    [cssvar("--physarum-walk"), "reported route, from the model's own walk"],
+    [cssvar("--physarum"), "reported route, from a fallback"],
+    [cssvar("--physarum-walk"), "this iteration's walk, ending in a cross if it dead-ends"],
+    [dashed(cssvar("--dijkstra")), "Dijkstra's optimum"],
+    [cssvar("--closed"), "closed road"]
+  ] : [
+    [cssvar("--aco"), "pheromone above its floor, log scale over 3 decades"],
+    [cssvar("--aco"), "best route so far"],
+    [dashed(cssvar("--ink")), "this iteration's best ant"],
+    [dashed(cssvar("--dijkstra")), "Dijkstra's optimum"],
+    [cssvar("--closed"), "closed road"]
+  ];
+  n.innerHTML = "";
+  items.forEach(it => n.appendChild(el("span", "key",
+    '<i style="background:' + it[0] + '"></i>' + it[1])));
+  n.appendChild(el("span", "key sub", "Map zoomed to this pair's neighbourhood."));
+}
+
+function animShow() {
+  document.getElementById("animscrub").value = String(ANIM.t);
+  drawAnim();
+  animReadout();
+}
+
+function animStop() {
+  if (ANIM.timer) clearTimeout(ANIM.timer);
+  ANIM.timer = null;
+  document.getElementById("animplay").textContent = "Play";
+}
+
+// Holds longer on the converged frame before the closure and on the first
+// frame after it, so the moment the roads close is visible.
+function animTick() {
+  if (ANIM.t >= ANIM.frames.length - 1) { animStop(); return; }
+  ANIM.t++;
+  animShow();
+  const base = REDUCED_MOTION ? 900 : 280;
+  const hold = ANIM.t === ANIM.split - 1 || ANIM.t === ANIM.split;
+  ANIM.timer = setTimeout(animTick, hold ? base * 5 : base);
+}
+
+function animPlay(fromStart) {
+  if (ANIM.timer && !fromStart) { animStop(); return; }
+  animStop();
+  if (fromStart || ANIM.t >= ANIM.frames.length - 1) { ANIM.t = 0; animShow(); }
+  document.getElementById("animplay").textContent = "Pause";
+  ANIM.timer = setTimeout(animTick, REDUCED_MOTION ? 900 : 280);
+}
+
+function animRebuild(mode) {
+  const run = ANIM.cell.runs[ANIM.algo], rec = run[ANIM.branch];
+  const wasAfter = ANIM.frames.length > 0 && ANIM.t >= ANIM.split;
+  const a = run.initial.frames.map(f => Object.assign({ phase: "initial", n: run.initial.n_iter }, f));
+  const b = rec.frames.map(f => Object.assign({ phase: ANIM.branch, n: rec.n_iter }, f));
+  ANIM.frames = a.concat(b);
+  ANIM.split = a.length;
+  // At rest, show the first frame after the field differentiates (chosen by
+  // the export from the data). Earlier, every tube is still equal; at the
+  // converged frame the field has collapsed under the route and is hidden.
+  if (mode === "branch" && wasAfter) ANIM.t = ANIM.split;
+  else if (mode !== "branch") ANIM.t = run.initial.rest != null ? run.initial.rest : ANIM.split - 1;
+  ANIM.t = Math.min(ANIM.t, ANIM.frames.length - 1);
+
+  document.getElementById("animscrub").max = String(ANIM.frames.length - 1);
+  document.getElementById("animtimeline").innerHTML =
+    '<span class="t-before" style="width:' + (100 * a.length / ANIM.frames.length) + '%"></span>'
+    + '<span class="t-after" style="width:' + (100 * b.length / ANIM.frames.length) + '%"></span>';
+  document.getElementById("animtimelabel").innerHTML =
+    INT(run.initial.n_iter) + " iterations before the closure, " + INT(rec.n_iter)
+    + " after it with a " + ANIM.branch + " start. Frames are spaced by how much the "
+    + "picture changes, so quiet stretches pass quickly; the readout gives the true iteration.";
+  document.getElementById("animstory").innerHTML =
+    "<b>" + ANIM.meta.title + ".</b> " + ANIM.meta.story;
+  animLegend();
+  animShow();
+}
+
+function animLoadCell(i) {
+  animStop();
+  const meta = ANIM.idx.cells[i];
+  const done = cell => { ANIM.cell = cell; ANIM.meta = meta; ANIM.frames = []; animRebuild("rest"); };
+  if (ANIM.cells[i]) { done(ANIM.cells[i]); return; }
+  document.getElementById("animstory").textContent = "Loading this case…";
+  fetch("data/anim/" + meta.file)
+    .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(c => { ANIM.cells[i] = c; done(c); })
+    .catch(e => {
+      document.getElementById("animstory").textContent =
+        "Could not load this case (" + e.message + ").";
+    });
+}
+
+function wireSeg(id, attr, onPick) {
+  const btns = document.querySelectorAll("#" + id + " button");
+  Array.prototype.forEach.call(btns, b => b.addEventListener("click", () => {
+    Array.prototype.forEach.call(btns, c => c.setAttribute("aria-pressed", String(c === b)));
+    onPick(b.dataset[attr]);
+  }));
+}
+
+function initAnim() {
+  const sel = document.getElementById("animcell");
+  if (!sel) return;
+  fetch("data/anim/index.json")
+    .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(idx => {
+      ANIM.idx = idx;
+      document.getElementById("animcheck").textContent =
+        "Before export, every regenerated run was checked against the results file: "
+        + idx.crosscheck.passed + " of " + idx.crosscheck.n + " values match exactly "
+        + "(iterations and stretch, before and after the closure, warm and cold).";
+      idx.cells.forEach((c, i) => {
+        const o = el("option", null, c.title + " \u00b7 " + c.scenario_id);
+        o.value = String(i);
+        sel.appendChild(o);
+      });
+      sel.addEventListener("change", () => animLoadCell(Number(sel.value)));
+      wireSeg("animalgo", "algo", v => { animStop(); ANIM.algo = v; animRebuild("algo"); });
+      wireSeg("animbranch", "branch", v => { animStop(); ANIM.branch = v; animRebuild("branch"); });
+      document.getElementById("animplay").addEventListener("click", () => animPlay(false));
+      document.getElementById("animrestart").addEventListener("click", () => animPlay(true));
+      document.getElementById("animscrub").addEventListener("input", e => {
+        animStop();
+        ANIM.t = Number(e.target.value);
+        animShow();
+      });
+      animLoadCell(0);
+    })
+    .catch(e => {
+      document.getElementById("animstory").textContent =
+        "Could not load the animation data (" + e.message + ").";
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Tabs, routed on the URL hash so each one can be bookmarked or linked.
+// ---------------------------------------------------------------------------
+const TABS = [
+  ["overview", "Overview"], ["routes", "Route explorer"], ["formation", "How paths form"],
+  ["quality", "Path quality"], ["recovery", "Recovery"], ["figures", "Figures"],
+  ["method", "Method & limits"]
+];
+
+function tabFromHash() {
+  const h = location.hash.slice(1);
+  return TABS.some(t => t[0] === h) ? h : "overview";
+}
+
+function showTab(id) {
+  Array.prototype.forEach.call(document.querySelectorAll("section[data-tab]"),
+    s => { s.hidden = s.dataset.tab !== id; });
+  Array.prototype.forEach.call(document.querySelectorAll("#tabs .tab"), b => {
+    const on = b.dataset.tab === id;
+    b.setAttribute("aria-selected", String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
+  if (id !== "formation") animStop();
+  // canvases are redrawn on reveal so they pick up the current theme
+  if (id === "routes") drawMap();
+  if (id === "formation") drawAnim();
+  const bar = document.getElementById("tabs");
+  if (bar && bar.getBoundingClientRect().top < 0) bar.scrollIntoView({ block: "start" });
+}
+
+function initTabs() {
+  const bar = document.getElementById("tabs");
+  if (!bar) return;
+  TABS.forEach(t => {
+    const b = el("button", "tab", t[1]);
+    b.type = "button";
+    b.id = "tab-" + t[0];
+    b.dataset.tab = t[0];
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-controls", "panel-" + t[0]);
+    b.addEventListener("click", () => {
+      if (location.hash.slice(1) === t[0]) showTab(t[0]);
+      else location.hash = t[0];
+    });
+    bar.appendChild(b);
+  });
+  bar.addEventListener("keydown", e => {
+    const ids = TABS.map(t => t[0]);
+    let i = ids.indexOf(tabFromHash());
+    if (e.key === "ArrowRight") i = (i + 1) % ids.length;
+    else if (e.key === "ArrowLeft") i = (i - 1 + ids.length) % ids.length;
+    else if (e.key === "Home") i = 0;
+    else if (e.key === "End") i = ids.length - 1;
+    else return;
+    e.preventDefault();
+    location.hash = ids[i];
+    document.getElementById("tab-" + ids[i]).focus();
+  });
+  window.addEventListener("hashchange", () => showTab(tabFromHash()));
+  showTab(tabFromHash());
+}
+
 function build() {
   const S = B.stats, m = S.meta, H = S.headline;
   document.getElementById("app").replaceWith(
@@ -816,9 +1401,12 @@ function build() {
     + " scenarios and 2 traffic levels.";
 
   renderCell();
-  window.addEventListener("resize", drawMap);
+  initAnim();
+  initTabs();
+  const redraw = () => { drawMap(); drawAnim(); };
+  window.addEventListener("resize", redraw);
   const mq = matchMedia("(prefers-color-scheme: dark)");
-  if (mq.addEventListener) mq.addEventListener("change", drawMap);
+  if (mq.addEventListener) mq.addEventListener("change", () => { redraw(); animLegend(); });
 }
 
 fetch("data/bundle.json")

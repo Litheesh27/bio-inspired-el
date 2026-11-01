@@ -701,6 +701,32 @@ that file has the detail.
       coverage; completion without quality). Before reporting that X hurts Y,
       measure what X BUYS.**
 
+- [x] Phase 9d — Dashboard tabs, and an animation of how ACO and Physarum
+      form their paths (`scripts/07_export_animation.py`, `web/data/anim/`).
+      Three real cells chosen to show three DIFFERENT behaviours, not three
+      flattering ones: the model working; the answer secretly being Dijkstra's
+      (walk works pre-closure, dead-ends after, full-graph fallback answers in
+      1 warm iteration); both bio-inspired methods failing (Physarum 1.613,
+      ACO 1.422). Regenerated like figs 1/5/6, and **cross-checked 48/48 against
+      the Parquet** (initial + recovery iterations and stretch, both methods,
+      warm and cold, all three cells); the export ABORTS on any mismatch.
+      Routers untouched; Physarum's dead-end point comes from `replay_walk`,
+      fed the PRE-step D (step() advances D before it extracts).
+      Every frame carries provenance, because an animation that shows tubes
+      converging and labels the result "Physarum's" would commit the paper's
+      own warned-against error.
+      **FINDING WORTH KNOWING: the field does not fade, it STEPS.** Every
+      tube/edge stays within half-scale for ~20 iterations (lockstep decay),
+      then ~95% collapse within ~4 iterations (physarum 23->27: 100%->5%;
+      ACO 16->19: 100%->1%). Two consequences, both applied: fields are shown
+      on a LOG scale (3 decades), applied BEFORE uint8 quantisation since a
+      linear quantise discards the low end; and frames are spaced by
+      cumulative visual change plus every story event, NOT by iteration, since
+      log-spacing gave the collapse ~2 frames out of ~21. The page opens on the
+      first post-collapse frame, chosen by the export from the data.
+      Physarum fields are normalised per frame by the max LIVE tube, which is
+      principled given the proven scale-invariance of the walk in D.
+
 ## Repo layout
 
 ```

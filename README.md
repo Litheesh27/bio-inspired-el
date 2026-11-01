@@ -215,6 +215,7 @@ config hash and timestamp, so any result is reconstructible.
 .venv/Scripts/python.exe scripts/04_make_figures.py      # figures 2,3,4,7 + tables
 .venv/Scripts/python.exe scripts/06_make_traces.py       # figures 1,5,6
 .venv/Scripts/python.exe scripts/05_export_web.py        # dashboard bundle
+.venv/Scripts/python.exe scripts/07_export_animation.py  # dashboard animations (~1 min)
 ```
 
 The full sweep takes about 10 hours at 14 workers. It is **resumable**:
@@ -266,7 +267,7 @@ bio_el/
 │   ├── metrics/               # result schema, collectors, Parquet sharding
 │   ├── experiments/           # matrix construction, parallel resumable runner
 │   └── viz/                   # stats, figures, maps, traces, dashboard export
-├── scripts/00_setup_check.py … 06_make_traces.py
+├── scripts/00_setup_check.py … 07_export_animation.py
 ├── web/                       # dashboard page + data bundle
 ├── figures/                   # publication-quality PNG + SVG
 ├── docs/
